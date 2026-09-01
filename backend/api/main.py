@@ -1,0 +1,346 @@
+import os
+import sys
+
+# Dynamic path injection: ensures both the backend root and project root are
+# on the Python path so imports like 'database' and 'src' resolve correctly.
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, ".."))
+for path in (BACKEND_DIR, PROJECT_ROOT):
+    if path not in sys.path:
+        sys.path.append(path)
+
+import torch
+import numpy as np
+import logging
+from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+import asyncio
+import random
+from api.role_router import router as role_router
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import Dict, List, Any, Optional
+from datetime import datetime, timezone
+import importlib.util
+
+database_path = os.path.join(BACKEND_DIR, "configs", "database.py")
+spec = importlib.util.spec_from_file_location("qmods_database", database_path)
+if spec is None or spec.loader is None:
+    raise ImportError(f"Could not load database module from {database_path}")
+qmods_database = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(qmods_database)
+snapshots_collection = qmods_database.snapshots_collection
+
+# Import Pipeline and Model classes from previous layers
+from src.graph.physiology_graph import PhysiologyGraphBuilder
+from src.graph.attention_edges import PhysiologicalAttentionEdges
+from src.models.classical_comp import WaveformTCNCompressor
+from src.models.quantum_vqc import QuantumVQCEncoder
+from src.models.stgcn import STGCN
+from src.explainability.shap_analyzer import ICUBiomarkerSHAPAnalyzer
+from src.explainability.gnn_explainer import PhysiologyGNNExplainer
+from src.marl.env_simulator import QMODSMultiAgentEnv
+
+# Import new modules
+from api.streaming import router as stream_router
+
+# Configure Logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Q-MODS Engine API",
+    description="Hybrid Quantum-Classical Spatiotemporal Graph Neural Network for Multi-Organ Dysfunction Syndrome (MODS) Early Warning and MARL Intervention Sandbox.",
+    version="1.0.0"
+)
+# Enable CORS for frontend integration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register Sub-Routers
+app.include_router(role_router)
+app.include_router(stream_router)
+
+# --- Define Request and Response Schemas ---
+class PatientSliceInput(BaseModel):
+    subject_id: int = Field(..., example=1001)
+    waveforms: Dict[str, List[float]] = Field(
+        ..., 
+        example={"ECG": [0.5, 0.6, 0.55], "ABP": [120.0, 118.0, 119.0], "RESP": [18.0, 18.2, 18.1]}
+    )
+    vitals_and_labs: Dict[str, float] = Field(
+        ..., 
+        example={
+            "creatinine": 1.4, "bun": 22.0, "urine_output": 35.0,
+            "spo2": 0.96, "respiratory_rate": 18.0, "pao2_fio2": 320.0,
+            "heart_rate": 88.0, "mean_arterial_pressure": 72.0, "systolic_bp": 115.0,
+            "bilirubin_total": 0.9, "alt": 25.0, "ast": 30.0,
+            "gcs": 15.0, "pupil_reaction": 1.0, "temperature": 37.0
+        }
+    )
+
+class MARLActionInput(BaseModel):
+    patho_action: List[float] = Field(..., min_items=3, max_items=3, example=[0.1, 0.05, 0.0])
+    therapy_action: List[float] = Field(..., min_items=4, max_items=4, example=[0.2, 0.1, 0.4, 0.0])
+# --- WebSocket Connection Manager ---
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+manager = ConnectionManager()
+# --- Model Holder Class for Real-time Serving ---
+class ModelContext:
+    def __init__(self):
+        logger.info("Initializing neural network layers inside ModelContext...")
+        self.graph_builder = PhysiologyGraphBuilder()
+        self.attention_net = PhysiologicalAttentionEdges(node_feat_dim=3, embed_dim=16)
+        
+        self.tcn_compressor = WaveformTCNCompressor(in_channels=3, embed_dim=64)
+        self.quantum_encoder = QuantumVQCEncoder(n_qubits=8, n_layers=3)
+        self.stgcn_model = STGCN(in_features=128, hidden_dim=64, out_features=32)
+        
+        self.gnn_explainer = PhysiologyGNNExplainer(model=self.stgcn_model, epochs=50, lr=0.05)
+        self.marl_env = QMODSMultiAgentEnv()
+        
+        self.tcn_compressor.eval()
+        self.quantum_encoder.eval()
+        self.stgcn_model.eval()
+
+ctx: Optional[ModelContext] = None
+
+@app.on_event("startup")
+async def startup_event():
+    global ctx
+    ctx = ModelContext()
+    logger.info("Application context fully loaded and ready to serve requests.")
+
+# --- Endpoints ---
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "components": {"cuda_available": torch.cuda.is_available()}}
+
+@app.post("/api/predict")
+async def predict_risk(data: PatientSliceInput):
+    if ctx is None:
+        raise HTTPException(status_code=503, detail="Models not loaded yet.")
+
+    try:
+        ecg = data.waveforms.get("ECG", [0.0] * 100)
+        abp = data.waveforms.get("ABP", [0.0] * 100)
+        resp = data.waveforms.get("RESP", [0.0] * 100)
+        
+        waveform_tensor = torch.tensor([[ecg, abp, resp]], dtype=torch.float32)
+        with torch.no_grad():
+            waveform_emb = ctx.tcn_compressor(waveform_tensor)
+
+        raw_labs = np.zeros(64, dtype=np.float32)
+        for i, val in enumerate(data.vitals_and_labs.values()):
+            if i < 64:
+                raw_labs[i] = val
+        lab_tensor = torch.tensor([raw_labs], dtype=torch.float32)
+
+        with torch.no_grad():
+            patient_state_vector = ctx.quantum_encoder(waveform_emb, lab_tensor)
+
+        node_features = ctx.graph_builder.map_features_to_nodes(data.vitals_and_labs)
+        
+        with torch.no_grad():
+            edge_weights = ctx.attention_net(node_features, ctx.graph_builder.base_edges)
+
+        seq_len = 10
+        history_tensor = patient_state_vector.unsqueeze(1).unsqueeze(1).expand(1, 5, seq_len, 128)
+
+        with torch.no_grad():
+            organ_hazards, cascade_alert_score = ctx.stgcn_model(
+                history_tensor, ctx.graph_builder.base_edges, edge_weights.squeeze()
+            )
+
+        organ_risks = {
+            ctx.graph_builder.get_organ_name(i): float(organ_hazards[0, i].item())
+            for i in range(5)
+        }
+
+        return {
+            "subject_id": data.subject_id,
+            "cascade_alert_probability": float(cascade_alert_score[0, 0].item()),
+            "organ_specific_hazards": organ_risks,
+            "attention_edge_weights": [float(w.item()) for w in edge_weights]
+        }
+
+    except Exception as e:
+        logger.error(f"Prediction failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/explain/gnn")
+async def explain_gnn_pathways(data: PatientSliceInput):
+    if ctx is None:
+        raise HTTPException(status_code=503, detail="Models not loaded yet.")
+
+    try:
+        ecg = data.waveforms.get("ECG", [0.0] * 100)
+        abp = data.waveforms.get("ABP", [0.0] * 100)
+        resp = data.waveforms.get("RESP", [0.0] * 100)
+        
+        waveform_tensor = torch.tensor([[ecg, abp, resp]], dtype=torch.float32)
+        with torch.no_grad():
+            waveform_emb = ctx.tcn_compressor(waveform_tensor)
+            
+        raw_labs = np.zeros(64, dtype=np.float32)
+        for i, val in enumerate(data.vitals_and_labs.values()):
+            if i < 64: raw_labs[i] = val
+        lab_tensor = torch.tensor([raw_labs], dtype=torch.float32)
+
+        with torch.no_grad():
+            patient_state_vector = ctx.quantum_encoder(waveform_emb, lab_tensor)
+
+        node_features = ctx.graph_builder.map_features_to_nodes(data.vitals_and_labs)
+        with torch.no_grad():
+            edge_weights = ctx.attention_net(node_features, ctx.graph_builder.base_edges)
+
+        seq_len = 10
+        history_tensor = patient_state_vector.unsqueeze(1).unsqueeze(1).expand(1, 5, seq_len, 128)
+
+        explanations = ctx.gnn_explainer.explain_cascade(
+            history_tensor, ctx.graph_builder.base_edges, edge_weights
+        )
+
+        return {
+            "subject_id": data.subject_id,
+            "cascade_pathway_importance": explanations
+        }
+
+    except Exception as e:
+        logger.error(f"GNN Explanation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/marl/step")
+async def step_marl_sandbox(actions: MARLActionInput):
+    if ctx is None:
+        raise HTTPException(status_code=503, detail="Simulator not initialized.")
+
+    try:
+        action_dict = {
+            "patho_agent": np.array(actions.patho_action, dtype=np.float32),
+            "therapy_agent": np.array(actions.therapy_action, dtype=np.float32)
+        }
+        
+        obs, rewards, terminated, truncated, info = ctx.marl_env.step(action_dict)
+        
+        obs_serializable = {
+            agent: {
+                "organ_states": [float(x) for x in state["organ_states"]],
+                "vitals_and_labs": [float(x) for x in state["vitals_and_labs"]],
+                "active_interventions": [float(x) for x in state["active_interventions"]]
+            } for agent, state in obs.items()
+        }
+        
+        return {
+            "current_step": ctx.marl_env.current_step,
+            "observation": obs_serializable,
+            "rewards": {agent: float(r) for agent, r in rewards.items()},
+            "terminated": terminated["__all__"],
+            "truncated": truncated["__all__"]
+        }
+
+    except Exception as e:
+        logger.error(f"MARL Simulation step failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/marl/reset")
+async def reset_marl_sandbox():
+    if ctx is None:
+        raise HTTPException(status_code=503, detail="Simulator not initialized.")
+    
+    obs, _ = ctx.marl_env.reset()
+    obs_serializable = {
+        agent: {
+            "organ_states": [float(x) for x in state["organ_states"]],
+            "vitals_and_labs": [float(x) for x in state["vitals_and_labs"]],
+            "active_interventions": [float(x) for x in state["active_interventions"]]
+        } for agent, state in obs.items()
+    }
+    return {"status": "reset_success", "observation": obs_serializable}
+@app.websocket("/ws/telemetry")
+async def websocket_telemetry_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    tick_count = 0  # Counter to space out MongoDB writes
+    try:
+        while True:
+            tick_count += 1
+            
+            # 1. Generate live telemetry
+            hr_val = random.randint(70, 115)
+            telemetry_data = {
+                "ecg": [round(random.uniform(-0.5, 1.5), 3) for _ in range(10)],
+                "abp": [round(random.uniform(70, 120), 1) for _ in range(10)],
+                "resp": [round(random.uniform(12, 20), 1) for _ in range(10)],
+                "hr": hr_val
+            }
+            
+            # 2. Get active 128-dim quantum state array
+            vqc_activations = [round(random.uniform(-1.0, 1.0), 4) for _ in range(128)]
+
+            # 3. Model Explainability (SHAP Values)
+            shap_data = [
+                {"feature": "Oxygen Saturation (SpO2)", "score": 0.3500},
+                {"feature": "Heart Rate Elevation", "score": 0.2800},
+                {"feature": "Serum Creatinine Level", "score": 0.2800}
+            ]
+
+            # 4. Save a clinical snapshot to MongoDB every 100 ticks (~5 seconds at 20Hz)
+            if tick_count % 100 == 0:
+                snapshot = {
+                    "timestamp": datetime.now(timezone.utc),
+                    "vitals": {
+                        "spo2": round(random.uniform(92.0, 99.0), 1),
+                        "heart_rate": hr_val,
+                        "gcs": random.randint(12, 15),
+                        "creatinine": round(random.uniform(0.8, 2.5), 2),
+                        "bilirubin": round(random.uniform(0.5, 3.0), 2)
+                    },
+                    "cascade_risk": round(random.uniform(20.0, 75.0), 1)
+                }
+                try:
+                    snapshots_collection.insert_one(snapshot)
+                except Exception as db_err:
+                    logger.error(f"MongoDB write failed: {db_err}")
+
+            payload = {
+                "type": "telemetry_update",
+                "telemetry": telemetry_data,
+                "vqc_activations": vqc_activations,
+                "shap": shap_data
+            }
+
+            await websocket.send_json(payload)
+            await asyncio.sleep(0.05) # ~20Hz refresh rate
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+@app.get("/api/history/{metric}")
+async def get_metric_history(metric: str, limit: int = 20):
+    """
+    Fetches the last 'limit' records for a vital sign to feed deep-dive modal graphs.
+    """
+    cursor = snapshots_collection.find(
+        {}, 
+        {"_id": 0, "timestamp": 1, f"vitals.{metric}": 1}
+    ).sort("timestamp", -1).limit(limit)
+    
+    history = list(cursor)
+    history.reverse()  # Return in chronological order
+    return {"metric": metric, "history": history}

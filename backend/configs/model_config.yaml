@@ -1,0 +1,19 @@
+# Q-MODS Spatiotemporal Graph Neural Network and Feature Embeddings Configuration
+tcn_compressor:
+  in_channels: 3               # [ECG, ABP, RESP]
+  embed_dim: 64                # Target latent feature representation size
+  num_channels: [16, 32, 64]   # Sequential residual TCN layer channel sizes
+  kernel_size: 3               # Causal filter step window size
+  dropout: 0.2                 # Dropout rate
+
+quantum_vqc:
+  n_qubits: 8                  # Number of physical simulated qubits
+  n_layers: 3                  # Strongly entangling gate layer iterations
+  classical_in_dim: 128        # Fused classical input layer size (64 waveform + 64 clinical)
+  patient_state_dim: 128       # Target Patient State Vector output size
+
+stgcn_model:
+  in_features: 128             # Inputs from Quantum VQC layer
+  hidden_dim: 64               # Multi-task GCN intermediate features
+  out_features: 32             # Final fully connected dense mapping layer size
+  num_nodes: 5                 # Primary organ nodes [Renal, Pulmonary, Cardio, Hepatic, CNS]

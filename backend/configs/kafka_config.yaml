@@ -1,0 +1,14 @@
+# High-Frequency Data Queue Settings
+kafka_broker:
+  bootstrap_servers: ["localhost:9092"]
+  client_id: "qmods-telemetry-engine"
+
+telemetry_topics:
+  raw_waveforms: "mimic.waveforms.raw"
+  denoised_waveforms: "mimic.waveforms.denoised"
+  aligned_features: "mimic.patient.aligned"
+  risk_alerts: "qmods.alerts.cascade"
+
+consumer_group:
+  pipeline_workers: "qmods-pipeline-workers-v1"
+  auto_offset_reset: "latest"

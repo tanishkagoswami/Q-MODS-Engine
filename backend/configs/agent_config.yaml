@@ -1,0 +1,18 @@
+# Multi-Agent Reinforcement Learning (MARL) Hyperparameters
+marl_training:
+  algorithm: "MAPPO"           # Multi-Agent Proximal Policy Optimization
+  framework: "torch"
+  gamma: 0.99                  # Temporal reward discount factor
+  lr: 0.0003                   # Policy optimization learning rate
+  entropy_coeff: 0.01          # Policy exploration preservation factor
+  clip_param: 0.2              # PPO policy distribution clipping threshold
+
+patho_agent:
+  state_dim: 14                # Node + Lab features input dimension
+  action_dim: 3                # INSULTS [Renal Septic, ARDS Lung, Cardiogenic Insult]
+  hidden_dim: 64
+
+therapy_agent:
+  state_dim: 14                # Fused features state space
+  action_dim: 4                # DOSES [Fluids, Vasopressors, Oxygen, CRRT Dialysis]
+  hidden_dim: 64

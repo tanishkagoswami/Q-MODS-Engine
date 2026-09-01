@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q-MODS Engine - Live Analytics & Visualizer Dashboard</title>
+    <!-- Tailwind CSS for modern utility-first styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chart.js for high-performance rendering of telemetry and quantum metrics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f19;
+        }
+        .font-mono-custom {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom scrollbar to keep layout clean */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        /* Custom pulsing light animation for active states */
+        @keyframes pulse-cyan {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.05); }
+        }
+        .pulse-active {
+            animation: pulse-cyan 2s infinite;
+        }
+    </style>
+</head>
+<body class="text-slate-100 overflow-x-hidden min-h-screen flex flex-col">
+    <!-- TOP CONTROL BAR -->
+<header class="w-full flex items-center justify-between p-4 bg-slate-800 border-b border-slate-700">
+    <h1 class="text-xl font-bold text-slate-100">Q-MODS Engine</h1>
+    
+    <div class="flex items-center gap-4">
+        <!-- The Status Badge -->
+        <span class="engine-badge px-3 py-1 rounded-full text-xs font-semibold bg-red-500/20 text-red-500">
+            Python Engine: Offline (Local Sim)
+        </span>
+        
+        <!-- The Live Toggle Button -->
+        <button id="btn-live-engine" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm font-semibold transition-colors">
+            Toggle Live Engine
+        </button>
+    </div>
+</header>
+<!-- END OF TOP CONTROL BAR -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center space-x-3">
+            <div class="h-10 w-10 rounded-lg bg-gradient-to-tr from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </div>
+            <div>
+                <h1 class="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-400 bg-clip-text text-transparent">Q-MODS Engine</h1>
+                <p class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quantum-Classical Spatiotemporal Graph Analytics</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+            <!-- Connection Status Badge -->
+            <div id="connectionStatusBadge" class="flex items-center gap-2 bg-red-950/40 border border-red-900 px-3 py-1.5 rounded-full text-xs">
+                <span class="h-2 w-2 rounded-full bg-red-500"></span>
+                <span id="connectionStatusText" class="text-red-400 font-bold">Python Engine: Offline (Local Sim)</span>
+            </div>
+
+            <!-- Mode Selector Toggle -->
+            <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 p-1 rounded-xl">
+                <button id="btnSimMode" class="bg-cyan-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition">Local Simulation</button>
+                <button id="btnApiMode" class="text-slate-400 text-xs px-3 py-1.5 rounded-lg font-bold hover:text-white transition">Live Python Engine</button>
+            </div>
+
+            <div class="flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-4 py-1.5 rounded-lg text-sm text-slate-300">
+                <span class="font-semibold text-slate-400">Subject:</span>
+                <span class="font-bold text-white">Patient #1001</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 p-6 grid grid-cols-1 xl:grid-cols-12 gap-6 max-w-[1920px] mx-full w-full">
+        
+        <!-- Left Panel: Live Telemetry & Control Panel (Columns 1-4) -->
+        <div class="xl:col-span-4 flex flex-col gap-6">
+            <!-- Telemetry Monitor Card -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex flex-col gap-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z"/></svg>
+                        <h2 class="text-lg font-bold">125Hz Telemetry Streams</h2>
+                    </div>
+                    <span id="telemetryBadge" class="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider animate-pulse">Live Feed</span>
+                </div>
+                
+                <!-- Telemetry Waveform Canvas Monitor -->
+                <div class="bg-black/80 border border-slate-800 rounded-xl p-3 relative h-48 flex flex-col justify-between overflow-hidden">
+                    <canvas id="waveformCanvas" class="absolute inset-0 w-full h-full"></canvas>
+                    <div class="absolute inset-0 bg-[linear-gradient(rgba(18,24,38,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(18,24,38,0.1)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none"></div>
+                    <div class="relative flex justify-between text-[10px] font-mono-custom text-emerald-400/70 pointer-events-none z-10 w-full px-2">
+                        <span>ECG (mV)</span>
+                        <span id="liveHeartRate">HR: -- bpm</span>
+                    </div>
+                    <div class="relative flex justify-between text-[10px] font-mono-custom text-cyan-400/70 pointer-events-none z-10 w-full px-2 pt-12">
+                        <span>ABP (mmHg)</span>
+                        <span id="liveMAP">MAP: -- mmHg</span>
+                    </div>
+                    <div class="relative flex justify-between text-[10px] font-mono-custom text-purple-400/70 pointer-events-none z-10 w-full px-2 pt-12">
+                        <span>RESP (mmHg)</span>
+                        <span id="liveResp">RESP: -- bpm</span>
+                    </div>
+                </div>
+
+                <!-- Control telemetry play/pause simulation -->
+                <div class="flex items-center gap-3">
+                    <button id="toggleTelemetry" class="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-sm py-2 px-4 rounded-xl transition shadow-lg shadow-cyan-900/30 flex items-center justify-center gap-2">
+                        <span id="telemetryStatusText">Pause Live Feed</span>
+                    </button>
+                    <button id="triggerAnomaly" class="bg-red-950/40 border border-red-800 hover:bg-red-900/30 text-red-400 font-bold text-sm py-2 px-4 rounded-xl transition">
+                        Trigger Anomaly
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                        <h2 class="text-lg font-bold">Patient Clinical Sliders</h2>
+                    </div>
+                    <button id="resetSliders" class="text-xs text-slate-400 hover:text-white underline">Reset Parameters</button>
+                </div>
+
+                <div class="flex flex-col gap-4 max-h-[380px] overflow-y-auto pr-2">
+                    <!-- SpO2 (Lungs) -->
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex justify-between text-xs font-semibold">
+                            <span class="text-slate-300">Oxygenation (SpO2)</span>
+                            <span id="val_spo2" class="text-emerald-400">98%</span>
+                        </div>
+                        <input type="range" id="slider_spo2" min="70" max="100" value="98" class="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    
+                    <!-- Creatinine (Kidney) -->
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex justify-between text-xs font-semibold">
+                            <span class="text-slate-300">Creatinine (Kidneys)</span>
+                            <span id="val_creatinine" class="text-emerald-400">0.9 mg/dL</span>
+                        </div>
+                        <input type="range" id="slider_creatinine" min="4" max="60" value="9" class="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Heart Rate (Cardio) -->
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex justify-between text-xs font-semibold">
+                            <span class="text-slate-300">Heart Rate (Cardio)</span>
+                            <span id="val_heart_rate" class="text-emerald-400">78 bpm</span>
+                        </div>
+                        <input type="range" id="slider_heart_rate" min="40" max="160" value="78" class="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Bilirubin (Liver) -->
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex justify-between text-xs font-semibold">
+                            <span class="text-slate-300">Bilirubin (Liver)</span>
+                            <span id="val_bilirubin" class="text-emerald-400">0.8 mg/dL</span>
+                        </div>
+                        <input type="range" id="slider_bilirubin" min="5" max="50" value="8" class="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- GCS (Brain) -->
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex justify-between text-xs font-semibold">
+                            <span class="text-slate-300">Glasgow Coma Scale (CNS)</span>
+                            <span id="val_gcs" class="text-emerald-400">15 / 15</span>
+                        </div>
+                        <input type="range" id="slider_gcs" min="3" max="15" value="15" class="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Panel: Quantum VQC Engine & Cascade Hazard (Columns 5-8) -->
+        <div class="xl:col-span-4 flex flex-col gap-6">
+            <!-- Quantum State Vector Matrix -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+                        <h2 class="text-lg font-bold">Quantum VQC Encoder Matrix</h2>
+                    </div>
+                    <span class="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded font-mono-custom">128-Dim Unified State</span>
+                </div>
+
+                <div class="flex flex-col gap-4">
+                    <!-- Grid Heatmap representation of the 128 Patient State Vector -->
+                    <div class="flex flex-col gap-1.5">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-slate-400 font-semibold">Unified State Vector (128-dim activations)</span>
+                            <span id="vqcStatusLabel" class="text-[10px] font-mono-custom text-slate-500">Auto-updating from VQC</span>
+                        </div>
+                        <div class="grid grid-cols-16 gap-1 p-2 bg-slate-950 rounded-xl border border-slate-800" id="vectorGrid">
+                            <!-- 128 elements will be rendered by Javascript -->
+                        </div>
+                    </div>
+
+                    <!-- 8 Qubits Pauli-Z Expectation values -->
+                    <div class="flex flex-col gap-1.5">
+                        <span class="text-xs text-slate-400 font-semibold">Qubit Expectation Values &lt;𝝈_z&gt;</span>
+                        <div class="grid grid-cols-4 gap-2" id="qubitGauges">
+                            <!-- 8 Qubits will be rendered dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global Systemic Cascade Risk Card -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex-1 flex flex-col gap-4 justify-between">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-red-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <h2 class="text-lg font-bold">Systemic Cascade Warning</h2>
+                    </div>
+                    <span class="text-xs font-bold font-mono-custom" id="riskStatusLabel">STABLE STATE</span>
+                </div>
+
+                <div class="flex flex-col items-center justify-center py-4 relative">
+                    <!-- Semi-circle gauge using Chart.js or canvas element -->
+                    <div class="w-44 h-44 relative flex items-center justify-center">
+                        <canvas id="gaugeCanvas" class="absolute inset-0 w-full h-full"></canvas>
+                        <div class="text-center z-10 flex flex-col">
+                            <span id="cascadeRiskPercentage" class="text-4xl font-extrabold tracking-tight font-mono-custom text-emerald-400">12.4%</span>
+                            <span class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Cascade Risk</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/80 border border-slate-800 p-3 rounded-xl text-xs flex flex-col gap-1">
+                    <div class="flex justify-between font-mono-custom text-slate-400">
+                        <span>Prediction Window:</span>
+                        <span class="text-slate-200">Next 4 Hours</span>
+                    </div>
+                    <div class="flex justify-between font-mono-custom text-slate-400">
+                        <span>Classification Model:</span>
+                        <span id="modelInfoLabel" class="text-slate-200 text-cyan-400">STGCN Block Network</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Spatiotemporal Physiology Graph & XAI Explainability (Columns 9-12) -->
+        <div class="xl:col-span-4 flex flex-col gap-6">
+            <!-- 5-Organ Physiology Graph Map -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/></svg>
+                        <h2 class="text-lg font-bold">5-Organ Physiology Graph</h2>
+                    </div>
+                    <span class="text-xs bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded font-mono-custom">Active Attention Connections</span>
+                </div>
+
+                <!-- Graphic representation of organ network -->
+                <div class="bg-slate-950 border border-slate-800 rounded-xl relative h-[250px] overflow-hidden">
+                    <svg id="organNetworkSvg" class="absolute inset-0 w-full h-full">
+                        <!-- Directed edge arrows -->
+                        <defs>
+                            <marker id="arrow" viewBox="0 0 10 10" refX="28" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569" />
+                            </marker>
+                            <marker id="arrow-hazard" viewBox="0 0 10 10" refX="28" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444" />
+                            </marker>
+                        </defs>
+                        <!-- Dynamic lines will be inserted via JS -->
+                        <g id="svg-edges"></g>
+                        <g id="svg-nodes"></g>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Explainability: SHAP Biomarkers & GNN pathways -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex-1 flex flex-col gap-4">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 .364l-.707 .707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                        <h2 class="text-lg font-bold">Model Explainability (XAI)</h2>
+                    </div>
+                    <span id="xaiBadge" class="text-xs bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded font-mono-custom">Kernel SHAP + GNN Explainer</span>
+                </div>
+
+                <div class="flex-1 flex flex-col gap-3 justify-between">
+                    <!-- Driving Factors of Failure (SHAP-style) -->
+                    <div class="flex flex-col gap-2">
+                        <span class="text-xs font-semibold text-slate-400">Top Driving Factors of Organ Distress (SHAP value)</span>
+                        <div class="flex flex-col gap-2" id="shapFactorsContainer">
+                            <!-- Dynamically loaded SHAP impact bars -->
+                        </div>
+                    </div>
+
+                    <!-- Critical Pathways (GNN-style) -->
+                    <div class="flex flex-col gap-2 border-t border-slate-800/60 pt-3">
+                        <span class="text-xs font-semibold text-slate-400">Active Risk Transmissions (GNN Explainer Mask)</span>
+                        <div class="flex flex-col gap-1 text-xs" id="gnnPathwaysContainer">
+                            <!-- Dynamic pathways -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        /*
+          Q-MODS Engine Interactive Client Real-Time Simulator
+          Combines live waveform drawing via Canvas with clinical-state equations and quantum mapping simulation.
+        */
+
+        // 1. Initial State Configurations
+        const state = {
+            isPlaying: true,
+            isAnomalyActive: false,
+            anomalyDuration: 0,
+            tick: 0,
+            ecgBuffer: [],
+            abpBuffer: [],
+            respBuffer: [],
+            activeMode: 'sim', // 'sim' or 'api'
+            isBackendConnected: false,
+            
+            // Generated outputs (updated locally in sim, or fetched from API in live mode)
+            organHazards: {
+                Renal: 0.12,
+                Pulmonary: 0.08,
+                Cardiovascular: 0.14,
+                Hepatic: 0.09,
+                CNS: 0.05
+            },
+            cascadeRisk: 12.4,
+            qubitValues: Array(8).fill(0).map(() => Math.random() * 0.4 - 0.2),
+            patientVector: Array(128).fill(0).map(() => Math.random() * 0.8 - 0.4)
+        }; // <--- The state object safely closes here now!
+
+        // Static mappings for Physiology Graph nodes
+        const organPositions = {
+            Cardiovascular: { x: 50, y: 35, label: "Cardio", color: "#60a5fa" },
+            Renal: { x: 20, y: 75, label: "Renal", color: "#34d399" },
+            Pulmonary: { x: 80, y: 75, label: "Pulm", color: "#f87171" },
+            Hepatic: { x: 50, y: 125, label: "Hepatic", color: "#fbbf24" },
+            CNS: { x: 50, y: 215, label: "CNS", color: "#a78bfa" }
+        };
+
+        // ==========================================
+        // 2. WebSocket Engine Integration
+        // ==========================================
+        let socket = null;
+        function connectLiveEngine() {
+        // Connect to the new FastAPI WebSocket endpoint
+        socket = new WebSocket("ws://127.0.0.1:8000/ws/telemetry");
+
+        socket.onopen = () => {
+            console.log("Connected to Live Python Engine");
+            updateEngineBadge(true);
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "telemetry_update") {
+                // Route the incoming data to your visual components
+                if (typeof updateDashboardWithLiveData === "function") {
+                    updateDashboardWithLiveData(data);
+                }
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error("WebSocket Error:", error);
+            updateEngineBadge(false);
+        };
+
+        socket.onclose = () => {
+            console.log("Disconnected from Live Engine");
+            updateEngineBadge(false);
+        };
+    }
+
+    // Function to update the UI badge in the top right
+    function updateEngineBadge(isOnline) {
+        // Keep the state synced
+        state.isBackendConnected = isOnline;
+
+        // Note: Make sure the class '.engine-badge' matches your HTML
+        const badge = document.querySelector('.engine-badge'); 
+        if (badge) {
+            if (isOnline) {
+                badge.textContent = "Python Engine: Online (Live FastAPI)";
+                badge.style.backgroundColor = "rgba(16, 185, 129, 0.2)"; // Green
+                badge.style.color = "#10B981";
+            } else {
+                badge.textContent = "Python Engine: Offline (Local Sim)";
+                badge.style.backgroundColor = "rgba(239, 68, 68, 0.2)"; // Red
+                badge.style.color = "#EF4444";
+            }
+        }
+    }
+        // Route the live data to your respective dashboard panels
+function updateDashboardWithLiveData(data) {
+    if (data.telemetry) {
+        // 1. Push the new 10-point arrays into our state buffers
+        state.ecgBuffer.push(...data.telemetry.ecg);
+        state.abpBuffer.push(...data.telemetry.abp);
+        state.respBuffer.push(...data.telemetry.resp);
+
+        // 2. Limit the buffer size so the browser doesn't crash from infinite data
+        const MAX_POINTS = 200;
+        if (state.ecgBuffer.length > MAX_POINTS) state.ecgBuffer = state.ecgBuffer.slice(-MAX_POINTS);
+        if (state.abpBuffer.length > MAX_POINTS) state.abpBuffer = state.abpBuffer.slice(-MAX_POINTS);
+        if (state.respBuffer.length > MAX_POINTS) state.respBuffer = state.respBuffer.slice(-MAX_POINTS);
+
+        // 3. Draw the lines on the screen
+        drawWaveforms();
+    }
+    
+    if (data.vqc_activations) {
+        // We will build this in Step 2!
+    }
+    
+    if (data.shap) {
+        // We will build this next!
+    }
+}
+
+// Function to render the clinical waveforms
+function drawWaveforms() {
+    const canvas = document.getElementById("waveformCanvas");
+    if (!canvas) return; // Failsafe in case the canvas isn't in the HTML yet
+    
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Wipe the canvas clean for the new frame
+    ctx.clearRect(0, 0, width, height);
+
+    // Helper function to draw a single line chart
+    function drawLine(buffer, color, verticalOffset, scaleMultiplier, baseline = 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        
+        const step = width / 200; // Space points evenly across the canvas
+        
+        for (let i = 0; i < buffer.length; i++) {
+            const x = i * step;
+            // Shift the values so they fit cleanly in their designated row
+            const y = verticalOffset - ((buffer[i] - baseline) * scaleMultiplier);
+            
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    // Draw ECG (Green) - Top 30% of canvas
+    drawLine(state.ecgBuffer, "#22c55e", height * 0.25, 20, 0);
+    
+    // Draw ABP (Blue) - Middle of canvas
+    drawLine(state.abpBuffer, "#3b82f6", height * 0.60, 1.5, 100); 
+    
+    // Draw RESP (Purple) - Bottom of canvas
+    drawLine(state.respBuffer, "#a855f7", height * 0.90, 5, 15); 
+}
+   /* // 3. PASTE YOUR NEW ROUTING & EVENT LISTENER CODE HERE:
+    function updateDashboardWithLiveData(data) {
+        if (data.telemetry) {
+            console.log("Received Telemetry:", data.telemetry);
+            // TODO: Call your existing chart update function here
+        }
+        if (data.vqc_activations) {
+            // TODO: Call your quantum matrix update function here
+        }
+        if (data.shap) {
+            // TODO: Call your SHAP table update function here
+        }
+    }*/
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const liveButton = document.getElementById("btn-live-engine");
+        if (liveButton) {
+            liveButton.addEventListener("click", () => {
+                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                    connectLiveEngine();
+                } else {
+                    socket.close();
+                }
+            });
+        }
+    }); 
+        // ... (rest of your WebSocket code goes here)
+
+        // Static mappings for Physiology Graph nodes
+       /* const organPositions = {
+            Cardiovascular: { x: 50, y: 35, label: "Cardio", color: "#60a5fa" },
+            Renal: { x: 20, y: 75, label: "Renal", color: "#34d399" },
+            Pulmonary: { x: 80, y: 75, label: "Pulm", color: "#f87171" },
+            Hepatic: { x: 50, y: 125, label: "Hepatic", color: "#fbbf24" },
+            CNS: { x: 50, y: 215, label: "CNS", color: "#a78bfa" }
+        };*/
+        // PASTE THE SLIDER EVENT LISTENER CODE HERE:
+    document.querySelectorAll('.slider-input-class').forEach(slider => { 
+        slider.addEventListener('input', (e) => {
+            const sliderId = e.target.id;
+            const newValue = e.target.value;
+
+            console.log(`Slider ${sliderId} changed to: ${newValue}`);
+
+            // 1. Update your local state/data object with the new value
+            currentPatientState[sliderId] = newValue;
+
+            // 2. Trigger an immediate refresh of your telemetry/graphs
+            updateWaveformWithSliderValues(currentPatientState);
+        });
+    });
+        const baseEdges = [
+            { from: "Cardiovascular", to: "Renal", desc: "Cardiorenal" },
+            { from: "Renal", to: "Cardiovascular", desc: "Renocardiac" },
+            { from: "Pulmonary", to: "Cardiovascular", desc: "Hypoxemic" },
+            { from: "Cardiovascular", to: "Pulmonary", desc: "Congestion" },
+            { from: "Hepatic", to: "Renal", desc: "Hepatorenal" },
+            { from: "Cardiovascular", to: "CNS", desc: "Perfusion" },
+            { from: "Renal", to: "CNS", desc: "Uremic" },
+            { from: "Hepatic", to: "CNS", desc: "Encephalopathy" },
+            { from: "Pulmonary", to: "CNS", desc: "Hypercapnic" }
+        ];
+
+        const canvas = document.getElementById('waveformCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.offsetWidth;
+        let height = canvas.offsetHeight;
+
+        // Force proper high-DPI scaling
+        canvas.width = width * window.devicePixelRatio;
+        canvas.height = height * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+        window.addEventListener('resize', () => {
+            width = canvas.offsetWidth;
+            height = canvas.offsetHeight;
+            canvas.width = width * window.devicePixelRatio;
+            canvas.height = height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        });
+
+        // Generate synthetic waveforms (used when offline or in simulation mode)
+        function generateNextWaveformPoints() {
+            state.tick++;
+            
+            // Basic rhythms
+            let ecgBase = 0.0;
+            const hrPeriod = Math.floor(60 * 125 / state.vitals.heart_rate); // Ticks per beat
+            const beatTick = state.tick % hrPeriod;
+
+            // Simple QRS model
+            if (beatTick === 0) ecgBase = 1.0; // QRS peak
+            else if (beatTick === 1 || beatTick === hrPeriod - 1) ecgBase = -0.15; // S / Q wave dip
+            else if (beatTick === Math.floor(hrPeriod * 0.15)) ecgBase = 0.2; // T wave
+            else if (beatTick === Math.floor(hrPeriod * 0.85)) ecgBase = 0.05; // P wave
+            else ecgBase = (Math.random() - 0.5) * 0.02; // Noise baseline
+
+            // Simulated base anomaly interference (ventricular rhythm drift)
+            if (state.isAnomalyActive) {
+                ecgBase += 0.3 * Math.sin(state.tick * 0.2);
+            }
+
+            // Arterial Blood Pressure (Systolic and Diastolic oscillation with dicrotic notch)
+            const mapBaseline = state.isAnomalyActive ? 52 : (70 + (state.vitals.heart_rate - 78) * 0.15);
+            const abpOsc = 15 * Math.sin( (beatTick / hrPeriod) * 2 * Math.PI );
+            const abpDicrotic = (beatTick > hrPeriod*0.4 && beatTick < hrPeriod*0.6) ? 4 * Math.sin(state.tick * 0.1) : 0;
+            const abpBase = mapBaseline + abpOsc + abpDicrotic;
+
+            // Respiration waveform
+            const respFreq = state.isAnomalyActive ? 0.08 : 0.03;
+            const respBase = 15 + 3 * Math.sin(state.tick * respFreq);
+
+            state.ecgBuffer.push(ecgBase);
+            state.abpBuffer.push(abpBase);
+            state.respBuffer.push(respBase);
+
+            // Maintain max points
+            if (state.ecgBuffer.length > 250) state.ecgBuffer.shift();
+            if (state.abpBuffer.length > 250) state.abpBuffer.shift();
+            if (state.respBuffer.length > 250) state.respBuffer.shift();
+        }
+
+        // Render Waveform Canvas loop
+        function drawWaveforms() {
+            ctx.clearRect(0, 0, width, height);
+
+            if (state.ecgBuffer.length < 2) return;
+
+            // 1. Draw ECG
+            ctx.beginPath();
+            ctx.strokeStyle = '#34d399'; // Emerald
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < state.ecgBuffer.length; i++) {
+                const x = (i / 250) * width;
+                const y = 35 - state.ecgBuffer[i] * 22;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // 2. Draw ABP
+            ctx.beginPath();
+            ctx.strokeStyle = '#22d3ee'; // Cyan
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < state.abpBuffer.length; i++) {
+                const x = (i / 250) * width;
+                // Scale map from 40-140 mmHg onto Canvas 60px to 120px height
+                const y = 110 - ((state.abpBuffer[i] - 50) / 70) * 35;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // 3. Draw RESP
+            ctx.beginPath();
+            ctx.strokeStyle = '#c084fc'; // Purple
+            ctx.lineWidth = 1.2;
+            for (let i = 0; i < state.respBuffer.length; i++) {
+                const x = (i / 250) * width;
+                const y = 165 - ((state.respBuffer[i] - 10) / 15) * 20;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        const vectorGrid = document.getElementById('vectorGrid');
+        function initVectorGrid() {
+            vectorGrid.innerHTML = '';
+            for (let i = 0; i < 128; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'aspect-square rounded-[2px] transition-all duration-300 bg-slate-900 border border-slate-800/40';
+                cell.id = `vec-cell-${i}`;
+                vectorGrid.appendChild(cell);
+            }
+        }
+        initVectorGrid();
+
+        // Update grid colors based on model activation values
+        function updateVectorGrid() {
+            for (let i = 0; i < 128; i++) {
+                const cell = document.getElementById(`vec-cell-${i}`);
+                if (!cell) continue;
+                const val = state.patientVector[i];
+                // Scale value onto color intensity (cyan highlights positive, red/purple highlights extreme negative)
+                if (val > 0) {
+                    const intensity = Math.min(Math.floor(val * 255 * 1.5), 255);
+                    cell.style.backgroundColor = `rgba(34, 211, 238, ${intensity / 255})`; // cyan
+                } else {
+                    const intensity = Math.min(Math.floor(Math.abs(val) * 255 * 1.5), 255);
+                    cell.style.backgroundColor = `rgba(167, 139, 250, ${intensity / 255})`; // purple
+                }
+            }
+        }
+
+        const qubitContainer = document.getElementById('qubitGauges');
+        function renderQubitGauges() {
+            qubitContainer.innerHTML = '';
+            for (let q = 0; q < 8; q++) {
+                const card = document.createElement('div');
+                card.className = 'bg-slate-950/60 border border-slate-800/60 p-2 rounded-xl flex flex-col items-center justify-center';
+                
+                const label = document.createElement('span');
+                label.className = 'text-[9px] font-mono-custom text-slate-500 font-bold';
+                label.innerText = `q${q}`;
+                
+                // Expectation Bar
+                const track = document.createElement('div');
+                track.className = 'w-full h-1.5 bg-slate-900 rounded-full overflow-hidden mt-1.5 border border-slate-800 relative';
+                
+                const fill = document.createElement('div');
+                fill.className = 'absolute top-0 bottom-0 bg-purple-500 transition-all duration-300';
+                fill.id = `q-fill-${q}`;
+                
+                const valText = document.createElement('span');
+                valText.className = 'text-[10px] font-mono-custom mt-1 text-purple-400 font-semibold';
+                valText.id = `q-val-${q}`;
+
+                track.appendChild(fill);
+                card.appendChild(label);
+                card.appendChild(track);
+                card.appendChild(valText);
+                qubitContainer.appendChild(card);
+            }
+        }
+        renderQubitGauges();
+
+        function updateQubitDisplays() {
+            for (let q = 0; q < 8; q++) {
+                const fill = document.getElementById(`q-fill-${q}`);
+                const valText = document.getElementById(`q-val-${q}`);
+                const val = state.qubitValues[q];
+
+                if (!fill || !valText) continue;
+
+                // Convert -1.0 to 1.0 expectations into 0% to 100% bar position
+                if (val >= 0) {
+                    fill.style.width = `${(val) * 50}%`;
+                    fill.style.left = '50%';
+                    fill.style.backgroundColor = '#a78bfa'; // positive
+                } else {
+                    fill.style.width = `${Math.abs(val) * 50}%`;
+                    fill.style.left = `${50 - Math.abs(val) * 50}%`;
+                    fill.style.backgroundColor = '#ec4899'; // negative
+                }
+                valText.innerText = val.toFixed(3);
+            }
+        }
+
+        const gaugeCanvas = document.getElementById('gaugeCanvas');
+        const gCtx = gaugeCanvas.getContext('2d');
+        gaugeCanvas.width = 176 * window.devicePixelRatio;
+        gaugeCanvas.height = 176 * window.devicePixelRatio;
+        gCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+        function drawGaugeArc(val) {
+            gCtx.clearRect(0, 0, 176, 176);
+            
+            // Draw background track
+            gCtx.beginPath();
+            gCtx.arc(88, 88, 75, 0.75 * Math.PI, 2.25 * Math.PI);
+            gCtx.strokeStyle = '#1e293b';
+            gCtx.lineWidth = 14;
+            gCtx.lineCap = 'round';
+            gCtx.stroke();
+
+            // Draw active risk track
+            gCtx.beginPath();
+            const endAngle = 0.75 * Math.PI + (val / 100) * 1.5 * Math.PI;
+            gCtx.arc(88, 88, 75, 0.75 * Math.PI, endAngle);
+            
+            // Color shift based on risk level
+            if (val > 60) gCtx.strokeStyle = '#ef4444'; // Red
+            else if (val > 30) gCtx.strokeStyle = '#f59e0b'; // Amber
+            else gCtx.strokeStyle = '#10b981'; // Emerald
+            
+            gCtx.lineWidth = 14;
+            gCtx.lineCap = 'round';
+            gCtx.stroke();
+        }
+
+        const svgNodes = document.getElementById('svg-nodes');
+        const svgEdges = document.getElementById('svg-edges');
+
+        function initGraph() {
+            svgNodes.innerHTML = '';
+            svgEdges.innerHTML = '';
+
+            // Draw directed edges (Lines)
+            baseEdges.forEach((edge, idx) => {
+                const src = organPositions[edge.from];
+                const dst = organPositions[edge.to];
+                
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", src.x * 3.6);
+                line.setAttribute("y1", src.y + 10);
+                line.setAttribute("x2", dst.x * 3.6);
+                line.setAttribute("y2", dst.y + 10);
+                line.setAttribute("stroke", "#334155");
+                line.setAttribute("stroke-width", "1.5");
+                line.setAttribute("marker-end", "url(#arrow)");
+                line.id = `edge-${idx}`;
+                
+                svgEdges.appendChild(line);
+            });
+
+            // Draw organ nodes
+            Object.keys(organPositions).forEach(key => {
+                const pos = organPositions[key];
+                
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("class", "cursor-pointer");
+                g.id = `node-${key}`;
+
+                // Base Outer glowing circle
+                const glowCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                glowCircle.setAttribute("cx", pos.x * 3.6);
+                glowCircle.setAttribute("cy", pos.y + 10);
+                glowCircle.setAttribute("r", "16");
+                glowCircle.setAttribute("fill", pos.color);
+                glowCircle.setAttribute("opacity", "0.15");
+                glowCircle.id = `node-glow-${key}`;
+
+                // Solid inner circle
+                const mainCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                mainCircle.setAttribute("cx", pos.x * 3.6);
+                mainCircle.setAttribute("cy", pos.y + 10);
+                mainCircle.setAttribute("r", "12");
+                mainCircle.setAttribute("fill", "#0f172a");
+                mainCircle.setAttribute("stroke", pos.color);
+                mainCircle.setAttribute("stroke-width", "2");
+
+                // Text label
+                const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                label.setAttribute("x", pos.x * 3.6);
+                label.setAttribute("y", pos.y + 32);
+                label.setAttribute("fill", "#94a3b8");
+                label.setAttribute("font-size", "9px");
+                label.setAttribute("font-weight", "bold");
+                label.setAttribute("text-anchor", "middle");
+                label.textContent = pos.label;
+
+                g.appendChild(glowCircle);
+                g.appendChild(mainCircle);
+                g.appendChild(label);
+                svgNodes.appendChild(g);
+            });
+        }
+        initGraph();
+
+        function updateGraphVisuals() {
+            // Update node glows based on current calculated hazards
+            Object.keys(state.organHazards).forEach(key => {
+                const hazard = state.organHazards[key];
+                const glow = document.getElementById(`node-glow-${key}`);
+                const parentG = document.getElementById(`node-${key}`);
+                if (!glow || !parentG) return;
+                const innerCircle = parentG.querySelector('circle:nth-child(2)');
+
+                // Update size and pulse speed based on danger
+                glow.setAttribute("r", `${14 + hazard * 18}`);
+                glow.setAttribute("opacity", `${0.1 + hazard * 0.5}`);
+
+                // Shift border node color towards red depending on hazard intensity
+                if (hazard > 0.6) {
+                    innerCircle.setAttribute("stroke", "#f87171"); // Red alert
+                    glow.setAttribute("fill", "#ef4444");
+                } else if (hazard > 0.3) {
+                    innerCircle.setAttribute("stroke", "#fbbf24"); // Amber risk
+                    glow.setAttribute("fill", "#fbbf24");
+                } else {
+                    innerCircle.setAttribute("stroke", organPositions[key].color); // Healthy baseline
+                    glow.setAttribute("fill", organPositions[key].color);
+                }
+            });
+
+            // Update attention edge parameters (failure cascade directions)
+            baseEdges.forEach((edge, idx) => {
+                const line = document.getElementById(`edge-${idx}`);
+                if (!line) return;
+                const srcHazard = state.organHazards[edge.from];
+
+                // If source node is severely failing, light up the pathway arrow connection red
+                if (srcHazard > 0.45) {
+                    line.setAttribute("stroke", "#ef4444");
+                    line.setAttribute("stroke-width", `${2 + srcHazard * 3}`);
+                    line.setAttribute("marker-end", "url(#arrow-hazard)");
+                    line.setAttribute("stroke-dasharray", "4,4");
+                    // Dynamic crawling animation effect for active hazards
+                    line.setAttribute("stroke-dashoffset", `${state.tick * 0.5}`);
+                } else {
+                    line.setAttribute("stroke", "#334155");
+                    line.setAttribute("stroke-width", "1.5");
+                    line.setAttribute("marker-end", "url(#arrow)");
+                    line.removeAttribute("stroke-dasharray");
+                }
+            });
+        }
+
+        // Simulates mathematical physiological connections (only used when in 'sim' mode)
+        function computeStateTransitions() {
+            if (state.activeMode !== 'sim') return;
+
+            const spo2Norm = state.vitals.spo2 / 100;
+            const creatinineNorm = Math.min((state.vitals.creatinine / 10) / 4, 1.0);
+            const hrNorm = Math.abs(state.vitals.heart_rate - 78) / 80;
+            const bilyNorm = Math.min((state.vitals.bilirubin / 10) / 3, 1.0);
+            const gcsNorm = (15 - state.vitals.gcs) / 12;
+
+            // Compute hazards
+            state.organHazards.Pulmonary = Math.min(1.0, 0.05 + (1 - spo2Norm) * 2.2 + (state.isAnomalyActive ? 0.35 : 0));
+            state.organHazards.Renal = Math.min(1.0, 0.05 + creatinineNorm * 2.5 + state.organHazards.Cardiovascular * 0.25);
+            state.organHazards.Cardiovascular = Math.min(1.0, 0.05 + hrNorm * 1.5 + (1 - spo2Norm) * 0.4 + (state.isAnomalyActive ? 0.4 : 0));
+            state.organHazards.Hepatic = Math.min(1.0, 0.05 + bilyNorm * 2.0 + state.organHazards.Cardiovascular * 0.15);
+            state.organHazards.CNS = Math.min(1.0, 0.05 + gcsNorm * 1.8 + state.organHazards.Pulmonary * 0.25);
+
+            // Cascade alert calculation
+            const sumHazards = Object.values(state.organHazards).reduce((a, b) => a + b, 0);
+            const maxHazard = Math.max(...Object.values(state.organHazards));
+            state.cascadeRisk = Math.min(100, Math.max(0, (maxHazard * 60) + (sumHazards * 8)));
+
+            // Simulate Quantum State mapping transitions (128 activation weights fluctuating)
+            for (let i = 0; i < 128; i++) {
+                const organBias = i % 5 === 0 ? state.organHazards.Renal :
+                                  i % 5 === 1 ? state.organHazards.Pulmonary :
+                                  i % 5 === 2 ? state.organHazards.Cardiovascular :
+                                  i % 5 === 3 ? state.organHazards.Hepatic : state.organHazards.CNS;
+
+                state.patientVector[i] = 0.5 * Math.sin(i * 0.5 + state.tick * 0.05) + organBias * 0.7 + (Math.random() - 0.5) * 0.15;
+            }
+
+            // Simulate 8 Qubits Pauli-Z expectations changing based on classical inputs
+            for (let q = 0; q < 8; q++) {
+                const combinedInfluence = (state.patientVector[q * 16] + state.patientVector[q * 16 + 7]) / 2;
+                state.qubitValues[q] = Math.max(-1.0, Math.min(1.0, combinedInfluence * 1.2 + (Math.random() - 0.5)*0.05));
+            }
+        }
+
+        const shapContainer = document.getElementById('shapFactorsContainer');
+        const gnnContainer = document.getElementById('gnnPathwaysContainer');
+
+        function updateExplainabilityMetrics() {
+            // Sort features to determine SHAP attributions
+            const features = [
+                { name: "Oxygen Saturation (SpO2)", val: -(state.vitals.spo2 - 100) * 0.05 - 0.05 },
+                { name: "Heart Rate Elevation", val: Math.max(0, state.vitals.heart_rate - 85) * 0.01 },
+                { name: "Serum Creatinine Level", val: (state.vitals.creatinine / 10) * 0.5 },
+                { name: "Serum Bilirubin Level", val: (state.vitals.bilirubin / 10) * 0.35 },
+                { name: "Neurological Distress (GCS)", val: (15 - state.vitals.gcs) * 0.06 }
+            ];
+
+            // Filter into destabilizing (> 0) and stabilizing (<= 0)
+            features.sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+
+            shapContainer.innerHTML = '';
+            features.slice(0, 3).forEach(feat => {
+                const row = document.createElement('div');
+                row.className = 'flex flex-col gap-1';
+                
+                const titleRow = document.createElement('div');
+                titleRow.className = 'flex justify-between text-xs';
+                titleRow.innerHTML = `<span class="text-slate-300 font-medium">${feat.name}</span>
+                                      <span class="font-mono-custom font-bold ${feat.val > 0 ? 'text-red-400' : 'text-emerald-400'}">
+                                          ${feat.val > 0 ? '+' : ''}${feat.val.toFixed(4)}
+                                      </span>`;
+
+                const bgBar = document.createElement('div');
+                bgBar.className = 'w-full h-1 bg-slate-950 rounded-full overflow-hidden relative';
+                
+                const valBar = document.createElement('div');
+                valBar.className = `absolute top-0 bottom-0 rounded-full transition-all duration-300 ${feat.val > 0 ? 'bg-red-500' : 'bg-emerald-500'}`;
+                valBar.style.width = `${Math.min(100, Math.abs(feat.val) * 150)}%`;
+                
+                bgBar.appendChild(valBar);
+                row.appendChild(titleRow);
+                row.appendChild(bgBar);
+                shapContainer.appendChild(row);
+            });
+
+            // GNN Explainability (Pathway transmissions)
+            gnnContainer.innerHTML = '';
+            const pathways = [
+                { path: "Cardiovascular → Renal", weight: 0.15 + state.organHazards.Cardiovascular * 0.8, name: "Cardiorenal Cascade" },
+                { path: "Pulmonary → Cardiovascular", weight: 0.10 + state.organHazards.Pulmonary * 0.7, name: "Hypoxemia stress" },
+                { path: "Renal → CNS", weight: 0.05 + state.organHazards.Renal * 0.6, name: "Uremic cerebral buildup" }
+            ];
+
+            pathways.sort((a,b) => b.weight - a.weight);
+            pathways.forEach(p => {
+                const el = document.createElement('div');
+                el.className = 'flex items-center justify-between p-1.5 rounded bg-slate-950/40 border border-slate-800/40 font-mono-custom';
+                
+                let badgeColor = 'text-slate-400';
+                if (p.weight > 0.6) badgeColor = 'text-red-400 font-bold animate-pulse';
+                else if (p.weight > 0.3) badgeColor = 'text-amber-400';
+
+                el.innerHTML = `<div class="flex flex-col">
+                                    <span class="text-[10px] text-slate-200 font-bold">${p.path}</span>
+                                    <span class="text-[8px] text-slate-500">${p.name}</span>
+                                </div>
+                                <span class="${badgeColor}">${p.weight.toFixed(3)}</span>`;
+                gnnContainer.appendChild(el);
+            });
+        }
+
+        const sliders = {
+            spo2: document.getElementById('slider_spo2'),
+            creatinine: document.getElementById('slider_creatinine'),
+            heart_rate: document.getElementById('slider_heart_rate'),
+            bilirubin: document.getElementById('slider_bilirubin'),
+            gcs: document.getElementById('slider_gcs')
+        };
+
+        const values = {
+            spo2: document.getElementById('val_spo2'),
+            creatinine: document.getElementById('val_creatinine'),
+            heart_rate: document.getElementById('val_heart_rate'),
+            bilirubin: document.getElementById('val_bilirubin'),
+            gcs: document.getElementById('val_gcs')
+        };
+
+        function readSliderValues() {
+            state.vitals.spo2 = parseInt(sliders.spo2.value);
+            state.vitals.creatinine = parseInt(sliders.creatinine.value) / 10;
+            state.vitals.heart_rate = parseInt(sliders.heart_rate.value);
+            state.vitals.bilirubin = parseInt(sliders.bilirubin.value) / 10;
+            state.vitals.gcs = parseInt(sliders.gcs.value);
+
+            // Update UI texts
+            values.spo2.innerText = `${state.vitals.spo2}%`;
+            values.creatinine.innerText = `${state.vitals.creatinine.toFixed(1)} mg/dL`;
+            values.heart_rate.innerText = `${state.vitals.heart_rate} bpm`;
+            values.bilirubin.innerText = `${state.vitals.bilirubin.toFixed(1)} mg/dL`;
+            values.gcs.innerText = `${state.vitals.gcs} / 15`;
+
+            // Adjust colors of slider value labels dynamically based on clinical ranges
+            values.spo2.className = state.vitals.spo2 < 93 ? 'text-red-400' : 'text-emerald-400';
+            values.creatinine.className = state.vitals.creatinine > 1.5 ? 'text-red-400' : 'text-emerald-400';
+            values.heart_rate.className = (state.vitals.heart_rate < 50 || state.vitals.heart_rate > 110) ? 'text-red-400' : 'text-emerald-400';
+            values.bilirubin.className = state.vitals.bilirubin > 1.2 ? 'text-red-400' : 'text-emerald-400';
+            values.gcs.className = state.vitals.gcs < 12 ? 'text-red-400' : 'text-emerald-400';
+        }
+
+        // --- HTTP API Integration Calls ---
+        async function fetchAnalysisFromBackend() {
+            if (state.activeMode !== 'api') return;
+
+            const payload = {
+                subject_id: 1001,
+                waveforms: {
+                    ECG: state.ecgBuffer.slice(-50), // Send the last 50 wave points
+                    ABP: state.abpBuffer.slice(-50),
+                    RESP: state.respBuffer.slice(-50)
+                },
+                vitals_and_labs: {
+                    creatinine: state.vitals.creatinine,
+                    bun: state.vitals.creatinine * 15,
+                    urine_output: state.vitals.spo2 > 92 ? 50.0 : 25.0,
+                    spo2: state.vitals.spo2 / 100,
+                    respiratory_rate: state.vitals.gcs < 10 ? 22 : 16,
+                    pao2_fio2: (state.vitals.spo2 - 60) * 5,
+                    heart_rate: state.vitals.heart_rate,
+                    mean_arterial_pressure: 80,
+                    systolic_bp: 120,
+                    bilirubin_total: state.vitals.bilirubin,
+                    alt: 25,
+                    ast: 30,
+                    gcs: state.vitals.gcs,
+                    pupil_reaction: 1,
+                    temperature: 37
+                }
+            };
+
+            try {
+                // Fetch dynamic predictions from the FastAPI server
+                const response = await fetch('http://127.0.0.1:8000/api/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error('API server error response');
+
+                const data = await response.json();
+
+                // Update UI state with actual Python calculations
+                state.cascadeRisk = data.cascade_alert_probability * 100;
+                
+                // Map hazards
+                state.organHazards.Cardiovascular = data.organ_specific_hazards.Cardiovascular;
+                state.organHazards.Renal = data.organ_specific_hazards.Renal;
+                state.organHazards.Pulmonary = data.organ_specific_hazards.Pulmonary;
+                state.organHazards.Hepatic = data.organ_specific_hazards.Hepatic;
+                state.organHazards.CNS = data.organ_specific_hazards.CNS;
+
+                // Adjust simulated quantum matrices with actual normalized scale variations
+                for(let i=0; i<128; i++) {
+                    state.patientVector[i] = (i % 2 === 0 ? 0.3 : -0.3) * data.cascade_alert_probability + (Math.random() - 0.5) * 0.1;
+                }
+                for(let q=0; q<8; q++) {
+                    state.qubitValues[q] = data.attention_edge_weights[q] ? (data.attention_edge_weights[q] - 1) / 3 : 0.0;
+                }
+
+                if(!state.isBackendConnected) {
+                    setConnectionStatus(true);
+                }
+
+            } catch (err) {
+                console.warn('Could not contact live Python backend. Falling back to local simulation.', err);
+                setConnectionStatus(false);
+            }
+        }
+
+        // Handle live connection tracking indicators
+        const connectionBadge = document.getElementById('connectionStatusBadge');
+        const connectionText = document.getElementById('connectionStatusText');
+        function setConnectionStatus(isConnected) {
+            state.isBackendConnected = isConnected;
+            if(isConnected) {
+                connectionBadge.className = "flex items-center gap-2 bg-emerald-950/40 border border-emerald-900 px-3 py-1.5 rounded-full text-xs";
+                connectionBadge.querySelector('span').className = "h-2 w-2 rounded-full bg-emerald-500 animate-ping";
+                connectionText.innerText = "Python Engine: Active & Online";
+                connectionText.className = "text-emerald-400 font-bold";
+                
+                document.getElementById('vqcStatusLabel').innerText = "Live: PyTorch + PennyLane";
+                document.getElementById('modelInfoLabel').innerText = "Live: STGCN Active Inference";
+            } else {
+                connectionBadge.className = "flex items-center gap-2 bg-red-950/40 border border-red-900 px-3 py-1.5 rounded-full text-xs";
+                connectionBadge.querySelector('span').className = "h-2 w-2 rounded-full bg-red-500";
+                connectionText.innerText = "Python Engine: Offline (Local Sim)";
+                connectionText.className = "text-red-400 font-bold";
+
+                document.getElementById('vqcStatusLabel').innerText = "Local Simulation Engine";
+                document.getElementById('modelInfoLabel').innerText = "Local Analytical Approximations";
+            }
+        }
+
+        // Sliders change event listeners
+        Object.keys(sliders).forEach(key => {
+            sliders[key].addEventListener('input', () => {
+                readSliderValues();
+                if(state.activeMode === 'sim') {
+                    computeStateTransitions();
+                } else {
+                    fetchAnalysisFromBackend();
+                }
+            });
+        });
+
+        // Trigger Anomaly simulation action
+        document.getElementById('triggerAnomaly').addEventListener('click', () => {
+            state.isAnomalyActive = true;
+            state.anomalyDuration = 100; // Ticks of anomaly duration
+            // Force sliders to bad clinical ranges
+            sliders.spo2.value = 88;
+            sliders.heart_rate.value = 135;
+            sliders.creatinine.value = 24;
+            sliders.gcs.value = 8;
+            
+            readSliderValues();
+            if(state.activeMode === 'sim') {
+                computeStateTransitions();
+            } else {
+                fetchAnalysisFromBackend();
+            }
+        });
+
+        // Reset sliders baseline
+        document.getElementById('resetSliders').addEventListener('click', () => {
+            state.isAnomalyActive = false;
+            sliders.spo2.value = 98;
+            sliders.heart_rate.value = 78;
+            sliders.creatinine.value = 9;
+            sliders.bilirubin.value = 8;
+            sliders.gcs.value = 15;
+
+            readSliderValues();
+            if(state.activeMode === 'sim') {
+                computeStateTransitions();
+            } else {
+                fetchAnalysisFromBackend();
+            }
+        });
+
+        // Toggle telemetry simulation flow
+        const toggleBtn = document.getElementById('toggleTelemetry');
+        const telemetryStatusText = document.getElementById('telemetryStatusText');
+        toggleBtn.addEventListener('click', () => {
+            state.isPlaying = !state.isPlaying;
+            if (state.isPlaying) {
+                telemetryStatusText.innerText = "Pause Live Feed";
+                toggleBtn.className = "flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-sm py-2 px-4 rounded-xl transition shadow-lg shadow-cyan-900/30 flex items-center justify-center gap-2";
+            } else {
+                telemetryStatusText.innerText = "Resume Live Feed";
+                toggleBtn.className = "flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm py-2 px-4 rounded-xl transition border border-slate-700 flex items-center justify-center gap-2";
+            }
+        });
+
+        // --- WebSocket Streaming Setup ---
+        function initWebSocketStream() {
+            if (state.ws) {
+                state.ws.close();
+            }
+
+            // Connects to the FastAPI telemetry pipeline
+            const wsUrl = `ws://127.0.0.1:8000/ws/telemetry/1001`;
+            state.ws = new WebSocket(wsUrl);
+
+            state.ws.onopen = () => {
+                console.log('Telemetry WebSocket connection established.');
+                document.getElementById('telemetryBadge').className = "text-xs bg-cyan-500/10 text-cyan-400 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider animate-pulse";
+                document.getElementById('telemetryBadge').innerText = "Live Python Stream";
+            };
+
+            state.ws.onmessage = (event) => {
+                if (state.activeMode !== 'api') return;
+                
+                const data = JSON.parse(event.data);
+                
+                // Inject streaming metrics directly into active oscilloscope buffers
+                state.ecgBuffer.push(data.metrics.ECG);
+                state.abpBuffer.push(data.metrics.ABP);
+                state.respBuffer.push(data.metrics.RESP);
+
+                if (state.ecgBuffer.length > 250) state.ecgBuffer.shift();
+                if (state.abpBuffer.length > 250) state.abpBuffer.shift();
+                if (state.respBuffer.length > 250) state.respBuffer.shift();
+
+                // Sync live numeric stats overlay
+                document.getElementById('liveHeartRate').innerText = `HR: ${data.vitals.heart_rate} bpm`;
+                document.getElementById('liveMAP').innerText = `MAP: ${data.vitals.mean_arterial_pressure} mmHg`;
+                document.getElementById('liveResp').innerText = `RESP: ${data.metrics.RESP.toFixed(0)} bpm`;
+            };
+
+            state.ws.onerror = () => {
+                fallbackToSimTelemetry();
+            };
+
+            state.ws.onclose = () => {
+                fallbackToSimTelemetry();
+            };
+        }
+
+        function fallbackToSimTelemetry() {
+            document.getElementById('telemetryBadge').className = "text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider animate-pulse";
+            document.getElementById('telemetryBadge').innerText = "Local Sim Feed";
+        }
+
+        // --- Mode Switching Triggers ---
+        const btnSimMode = document.getElementById('btnSimMode');
+        const btnApiMode = document.getElementById('btnApiMode');
+
+        btnSimMode.addEventListener('click', () => {
+            state.activeMode = 'sim';
+            btnSimMode.className = "bg-cyan-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition";
+            btnApiMode.className = "text-slate-400 text-xs px-3 py-1.5 rounded-lg font-bold hover:text-white transition";
+            setConnectionStatus(false);
+            if(state.ws) state.ws.close();
+            computeStateTransitions();
+        });
+
+        btnApiMode.addEventListener('click', () => {
+            state.activeMode = 'api';
+            btnApiMode.className = "bg-cyan-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition";
+            btnSimMode.className = "text-slate-400 text-xs px-3 py-1.5 rounded-lg font-bold hover:text-white transition";
+            
+            // Ping server immediately and spawn WS
+            initWebSocketStream();
+            fetchAnalysisFromBackend();
+        });
+
+        // --- Central Engine Simulation Loop ---
+        function engineLoop() {
+            if (state.isPlaying) {
+                state.tick++;
+
+                if (state.activeMode === 'sim') {
+                    // Generate local fake rhythms
+                    generateNextWaveformPoints();
+                    
+                    // Anomaly countdown
+                    if (state.isAnomalyActive && state.anomalyDuration > 0) {
+                        state.anomalyDuration--;
+                        if (state.anomalyDuration === 0) {
+                            state.isAnomalyActive = false;
+                        }
+                    }
+
+                    // Smooth out calculations
+                    computeStateTransitions();
+
+                    // Maintain live stats overlays
+                    document.getElementById('liveHeartRate').innerText = `HR: ${state.vitals.heart_rate} bpm`;
+                    document.getElementById('liveMAP').innerText = `MAP: ${state.isAnomalyActive ? 52 : (70 + (state.vitals.heart_rate - 78) * 0.15).toFixed(0)} mmHg`;
+                    document.getElementById('liveResp').innerText = `RESP: ${state.isAnomalyActive ? 22 : 16} bpm`;
+                } else {
+                    // Periodic validation checks against live model servers (every 1.5 seconds)
+                    if(state.tick % 90 === 0) {
+                        fetchAnalysisFromBackend();
+                    }
+                }
+            }
+
+            // Draw oscilloscope monitor
+            drawWaveforms();
+
+            // Render Quantum Matrix and Qubit values
+            updateVectorGrid();
+            updateQubitDisplays();
+
+            // Render Dynamic Physiology graph updates
+            updateGraphVisuals();
+
+            // Render dynamic Gauge arc
+            drawGaugeArc(state.cascadeRisk);
+
+            // Update risk classification alert details
+            const riskValueText = document.getElementById('cascadeRiskPercentage');
+            const riskStatusLabel = document.getElementById('riskStatusLabel');
+            riskValueText.innerText = `${state.cascadeRisk.toFixed(1)}%`;
+            
+            if (state.cascadeRisk > 60) {
+                riskValueText.className = "text-4xl font-extrabold tracking-tight font-mono-custom text-red-500 animate-pulse";
+                riskStatusLabel.innerText = "CRITICAL MULTI-ORGAN FAILURE CASCADE";
+                riskStatusLabel.className = "text-xs font-bold font-mono-custom text-red-400";
+            } else if (state.cascadeRisk > 30) {
+                riskValueText.className = "text-4xl font-extrabold tracking-tight font-mono-custom text-amber-500";
+                riskStatusLabel.innerText = "UNSTABLE ORGAN TRANSITIONS";
+                riskStatusLabel.className = "text-xs font-bold font-mono-custom text-amber-400";
+            } else {
+                riskValueText.className = "text-4xl font-extrabold tracking-tight font-mono-custom text-emerald-400";
+                riskStatusLabel.innerText = "PATIENT SYSTEMICALLY STABLE";
+                riskStatusLabel.className = "text-xs font-bold font-mono-custom text-emerald-400";
+            }
+
+            // Render Explainability bars (SHAP/GNN)
+            updateExplainabilityMetrics();
+
+            requestAnimationFrame(engineLoop);
+        }
+
+        // Initialize state parameters and launch simulation engine loops
+        readSliderValues();
+        computeStateTransitions();
+        requestAnimationFrame(engineLoop);
+
+    </script>
+</body>
+</html>
