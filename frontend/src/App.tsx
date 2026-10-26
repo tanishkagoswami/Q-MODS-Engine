@@ -5,8 +5,9 @@ import { useEngineSocket } from './hooks/useEngineSocket';
 import { WaveformCanvas } from './components/WaveformCanvas';
 import { VitalControls } from './components/VitalControls';
 import OrganGraph from './components/OrganGraph'; 
-import SandboxControls from './components/SandboxControls'; 
+
 import NurseTaskQueue from './components/NurseTaskQueue';
+import DigitalTwin from './components/DigitalTwin';
 import ShapExplainer from './components/ShapExplainer';
 import QuantumVisualizer from './components/QuantumVisualizer';
 import PatientHub from './components/PatientHub';
@@ -69,6 +70,7 @@ export default function App() {
       </div>
 
       <main className="flex-1 p-6 grid grid-cols-1 xl:grid-cols-12 gap-6 max-w-[1920px] mx-auto w-full">
+        
         <div className="xl:col-span-4 flex flex-col gap-6">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex flex-col gap-4">
             <div className="flex items-center justify-between">
@@ -98,8 +100,7 @@ export default function App() {
 
           <VitalControls vitals={state.vitals} setVitals={actions.setVitals} />
 
-          {/* Render Sandbox only for the Physician role */}
-          {currentRole === 'physician' && <SandboxControls />}
+          
           
           {/* UPDATE THIS LINE to pass vitals and risk to the Nurse Queue */}
           {currentRole === 'nurse' && <NurseTaskQueue vitals={state.vitals} cascadeRisk={state.cascadeRisk} />}
@@ -128,6 +129,12 @@ export default function App() {
           <QuantumVisualizer activations={state.vqc_activations || []} />
 
         </div>
+        <div className="xl:col-span-4 h-full">
+            <DigitalTwin hazards={state.organ_hazards} />
+          </div>
+          
+        
+
 
         <div className="xl:col-span-4 flex flex-col gap-6">
           {/* Passed the new organ_hazards from the Python payload, with a safety fallback */}
