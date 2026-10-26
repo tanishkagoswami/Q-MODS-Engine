@@ -18,27 +18,48 @@ ICU telemetry today is highly reactive. Alarms sound only *after* a patient's vi
 
 ## Screenshots
 
-### Interactive Digital Twin
-Systemic cascade warning and glowing organ hazard mapping. High-frequency telemetry streams render live alongside overall cascade probability.  
-![Digital Twin](Screenshot%202026-10-27%20010121.jpg)
+### 1. Interactive Digital Twin
+Systemic cascade warning and glowing organ hazard mapping. High-frequency telemetry streams render live alongside overall cascade probability.
 
-### MARL Intervention Sandbox
-Simulate pharmacological therapies (Vasopressors, IV Fluids, Diuretics). AI instantly evaluates the intervention and adjusts the patient's predicted trajectory.  
-![MARL Sandbox](Screenshot%202026-10-27%20010157.png)
+![Digital Twin](docs/digital-twin.png)
 
-### Historical Trajectory (Cold Storage)
-Live animated trendlines pulling from MongoDB. Visualizes the exact temporal deterioration or recovery of specific organs (e.g., Heart, Brain).  
-![Trajectory](Screenshot%202026-10-27%20010146.jpg)
+---
 
-### Dynamic Nurse Task Queue
-Backend AI-prioritized interventions. Translates live risk spikes (e.g., GCS drops, Renal decline) into immediate, scored tasks for the nursing staff.  
-![Nurse Queue](Screenshot%202026-10-27%20010252.jpg)
+### 2. MARL Intervention Sandbox
+Simulate pharmacological therapies (Vasopressors, IV Fluids, Inotropes, Diuretics). The AI instantly evaluates the intervention, returns a penalty or recovery score, and adjusts the patient's predicted trajectory and organ hazard levels.
 
-### Quantum VQC & SHAP Explainer
-Complete AI transparency. Live matrix visualization of the 128-Qubit Latent Embedding Space, accompanied by SHAP feature importance for clinical trust.  
-![Quantum VQC](Screenshot%202026-10-27%20010228.jpg)
+![MARL Sandbox](docs/marl-sandbox.png)
+
+---
+
+### 3. Historical Trajectory (Cold Storage)
+Live animated trendlines pulling from MongoDB. Visualizes the exact temporal deterioration or recovery of specific organs (e.g., Heart, Brain).
+
+![Trajectory](docs/trajectory.png)
+
+---
+
+### 4. Dynamic Nurse Task Queue
+Backend AI-prioritized interventions. Translates live risk spikes (e.g., GCS drops, Renal decline) into immediate, scored tasks for the nursing staff.
+
+![Nurse Queue](docs/nurse-queue.png)
+
+---
+
+### 5. Quantum VQC & SHAP Explainer
+Complete AI transparency. Live matrix visualization of the latent embedding space, accompanied by SHAP feature importance for clinical trust. Patient clinical sliders let clinicians adjust inputs (SpO2, heart rate, GCS, creatinine, bilirubin) and watch the per-organ hazard scores respond.
+
+![Quantum VQC](docs/vqc-shap.png)
+
+---
+
+### 6. Patient & Family Status Hub
+Predictive telemetry translated into a plain-English status summary, with heart rhythm, oxygen level, and a per-organ hazard breakdown.
+
+![Patient Hub](docs/patient-hub.png)
 
 *(Platform is responsive and optimized for low-latency browser rendering).*
+
 ---
 
 ## The Clinical Workspaces
@@ -101,12 +122,12 @@ flowchart LR
 
 ---
 
-## ## Tech Stack
+## Tech Stack
 
 * **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Recharts (for live polling modals), HTML5 Canvas (for 125Hz waveform rendering).
 * **Backend:** Python 3.11+, FastAPI, Uvicorn, WebSockets.
 * **Machine Learning & Quantum:** PyTorch, PyTorch Geometric (for STGCN), custom MARL environments, **Quantum Variational Circuits (VQC)**, SHAP (for GNN explainability).
-* **Data Layer:** Redis (asyncio for HFT streaming), MongoDB (Motor/PyMongo for permanent historical snapshots)..
+* **Data Layer:** Redis (asyncio for HFT streaming), MongoDB (Motor/PyMongo for permanent historical snapshots).
 
 ---
 
@@ -116,7 +137,7 @@ Ensure you have Python 3.11+, Node.js, and local instances of Redis and MongoDB 
 
 **1. Boot the FastAPI Backend:**
 ```powershell
-git clone https://github.com/Tanishka/Q-MODS-Engine.git
+git clone https://github.com/tanishkagoswami/Q-MODS-Engine.git
 cd Q-MODS-Engine/backend
 python -m venv venv
 .\venv\Scripts\activate
@@ -135,6 +156,6 @@ Navigate to `http://localhost:5173`. Toggle the "Live Engine" button in the top 
 
 ---
 
-## 
+## Author
 
-* **Tanishka ** – Full Stack Architecture, System Integration & UI/UX, Machine Learning Models & Backend Pipeline
+**Tanishka**
