@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # The Q-MODS Python Engine
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - mongodb
+    environment:
+      # These variables let Docker containers talk to each other
+      - REDIS_HOST=redis
+      - MONGO_HOST=mongodb
+
+  # The In-Memory HFT Broker
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  # The Cold-Storage Database
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:

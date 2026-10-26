@@ -1,5 +1,7 @@
 import os
 import sys
+import redis.asyncio as redis
+import json
 
 # Dynamic path injection: ensures both the backend root and project root are
 # on the Python path so imports like 'database' and 'src' resolve correctly.
@@ -86,6 +88,11 @@ class PatientSliceInput(BaseModel):
 class MARLActionInput(BaseModel):
     patho_action: List[float] = Field(..., min_items=3, max_items=3, example=[0.1, 0.05, 0.0])
     therapy_action: List[float] = Field(..., min_items=4, max_items=4, example=[0.2, 0.1, 0.4, 0.0])
+
+class ClinicalState(BaseModel):
+    vitals: dict
+    cascade_risk: float
+
 # --- WebSocket Connection Manager ---
 class ConnectionManager:
     def __init__(self):
@@ -100,6 +107,7 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
 manager = ConnectionManager()
+
 # --- Model Holder Class for Real-time Serving ---
 class ModelContext:
     def __init__(self):
@@ -120,11 +128,34 @@ class ModelContext:
 
 ctx: Optional[ModelContext] = None
 
+# Initialize async Redis client (In-memory HFT broker)
+redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+
+async def async_mongo_flusher():
+    """
+    HFT Pattern: Background worker that wakes up every 5 seconds, 
+    pulls the latest state from the ultra-fast Redis cache, and writes it to MongoDB.
+    """
+    while True:
+        await asyncio.sleep(5)
+        try:
+            raw_state = await redis_client.get("latest_clinical_snapshot")
+            if raw_state:
+                snapshot = json.loads(raw_state)
+                snapshot["timestamp"] = datetime.now(timezone.utc)
+                snapshots_collection.insert_one(snapshot)
+        except Exception as e:
+            logger.error(f"Async Mongo batch write failed: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     global ctx
     ctx = ModelContext()
-    logger.info("Application context fully loaded and ready to serve requests.")
+    
+    # Fire up the background asynchronous flusher
+    asyncio.create_task(async_mongo_flusher())
+    
+    logger.info("Application context fully loaded. Async Mongo flusher active.")
 
 # --- Endpoints ---
 
@@ -273,14 +304,13 @@ async def reset_marl_sandbox():
         } for agent, state in obs.items()
     }
     return {"status": "reset_success", "observation": obs_serializable}
+
+
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
-    tick_count = 0  # Counter to space out MongoDB writes
     try:
         while True:
-            tick_count += 1
-            
             # 1. Generate live telemetry
             hr_val = random.randint(70, 115)
             telemetry_data = {
@@ -300,34 +330,43 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 {"feature": "Serum Creatinine Level", "score": 0.2800}
             ]
 
-            # 4. Save a clinical snapshot to MongoDB every 100 ticks (~5 seconds at 20Hz)
-            if tick_count % 100 == 0:
-                snapshot = {
-                    "timestamp": datetime.now(timezone.utc),
-                    "vitals": {
-                        "spo2": round(random.uniform(92.0, 99.0), 1),
-                        "heart_rate": hr_val,
-                        "gcs": random.randint(12, 15),
-                        "creatinine": round(random.uniform(0.8, 2.5), 2),
-                        "bilirubin": round(random.uniform(0.5, 3.0), 2)
-                    },
-                    "cascade_risk": round(random.uniform(20.0, 75.0), 1)
-                }
-                try:
-                    snapshots_collection.insert_one(snapshot)
-                except Exception as db_err:
-                    logger.error(f"MongoDB write failed: {db_err}")
+            # 4. Generate Vitals and Hazards continuously for the React UI
+            current_vitals = {
+                "spo2": round(random.uniform(92.0, 99.0), 1),
+                "heart_rate": hr_val,
+                "gcs": random.randint(12, 15),
+                "creatinine": round(random.uniform(0.8, 2.5), 2),
+                "bilirubin": round(random.uniform(0.5, 3.0), 2)
+            }
+            current_risk = round(random.uniform(20.0, 75.0), 1)
+            current_hazards = {
+                "cardiovascular": round(random.uniform(10, 80), 1),
+                "pulmonary": round(random.uniform(10, 80), 1),
+                "renal": round(random.uniform(10, 80), 1),
+                "hepatic": round(random.uniform(10, 80), 1),
+                "cns": round(random.uniform(10, 80), 1)
+            }
 
+            # 5. NEW: Ultra-low latency write to in-memory Redis cache (Sub-millisecond)
+            await redis_client.set("latest_clinical_snapshot", json.dumps({
+                "vitals": current_vitals,
+                "cascade_risk": current_risk,
+                "organ_hazards": current_hazards
+            }))
+
+            # 6. Send EVERYTHING to the React frontend
             payload = {
                 "type": "telemetry_update",
                 "telemetry": telemetry_data,
                 "vqc_activations": vqc_activations,
-                "shap": shap_data
+                "shap": shap_data,
+                "vitals": current_vitals,
+                "cascade_risk": current_risk,
+                "organ_hazards": current_hazards
             }
 
             await websocket.send_json(payload)
-            await asyncio.sleep(0.05) # ~20Hz refresh rate
-
+            await asyncio.sleep(1.0) # Throttled to ~5Hz (clean, readable updates)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
@@ -344,3 +383,52 @@ async def get_metric_history(metric: str, limit: int = 20):
     history = list(cursor)
     history.reverse()  # Return in chronological order
     return {"metric": metric, "history": history}
+
+@app.post("/api/nurse/analyze")
+async def analyze_clinical_state(state: ClinicalState):
+    """
+    Accepts real-time vital streams from the frontend, compares them against 
+    the most recent MongoDB database snapshot, and generates dynamic tasks.
+    """
+    # 1. Fetch the most recent historical snapshot to calculate trajectory (deltas)
+    cursor = snapshots_collection.find({}, {"_id": 0}).sort("timestamp", -1).limit(1)
+    snapshots = list(cursor)
+
+    base_tasks = [
+        {"id": "t1", "task": "Administer scheduled antibiotics", "priority": "routine", "urgency_score": 20},
+        {"id": "t2", "task": "Check IV line patency", "priority": "routine", "urgency_score": 15},
+        {"id": "t3", "task": "Update family on overnight stability", "priority": "routine", "urgency_score": 10},
+    ]
+    
+    dynamic_tasks = []
+    vitals = state.vitals
+    
+    # 2. Absolute Clinical Thresholds
+    if state.cascade_risk > 60.0:
+        dynamic_tasks.append({"id": "d1", "task": "PRE-STAGE: Rapid Response Kit (Systemic Risk Spike)", "priority": "critical", "urgency_score": 95})
+    
+    if vitals.get("spo2", 100) < 92.0:
+        dynamic_tasks.append({"id": "d2", "task": "STAT: Titrate O2 and prepare for intubation", "priority": "critical", "urgency_score": 90})
+        
+    if vitals.get("creatinine", 0) > 1.5:
+        dynamic_tasks.append({"id": "d3", "task": "Measure hourly urine output (Renal Decline)", "priority": "high", "urgency_score": 85})
+        
+    if vitals.get("gcs", 15) < 13:
+        dynamic_tasks.append({"id": "d4", "task": "Perform neuro check (GCS drop detected)", "priority": "high", "urgency_score": 88})
+
+    # 3. Rate-of-Change (Trajectory) Thresholds against MongoDB
+    if snapshots:
+        last_db = snapshots[0]
+        hr_delta = vitals.get("heart_rate", 0) - last_db.get("vitals", {}).get("heart_rate", 0)
+        
+        if hr_delta > 15:
+            dynamic_tasks.append({
+                "id": "d5", 
+                "task": f"Acute HR Spike (+{hr_delta:.0f} bpm) - Check for arrhythmia/pain", 
+                "priority": "high", 
+                "urgency_score": 82
+            })
+
+    # 4. Sort all tasks strictly by AI urgency score
+    all_tasks = sorted(base_tasks + dynamic_tasks, key=lambda x: x["urgency_score"], reverse=True)
+    return {"tasks": all_tasks}

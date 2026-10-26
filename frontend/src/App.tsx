@@ -4,8 +4,12 @@ import type { ClinicalRole } from './components/RoleNavbar';
 import { useEngineSocket } from './hooks/useEngineSocket';
 import { WaveformCanvas } from './components/WaveformCanvas';
 import { VitalControls } from './components/VitalControls';
-import { OrganGraph } from './components/OrganGraph';
-
+import OrganGraph from './components/OrganGraph'; 
+import SandboxControls from './components/SandboxControls'; 
+import NurseTaskQueue from './components/NurseTaskQueue';
+import ShapExplainer from './components/ShapExplainer';
+import QuantumVisualizer from './components/QuantumVisualizer';
+import PatientHub from './components/PatientHub';
 export default function App() {
   const { state, actions, buffers } = useEngineSocket();
   const [currentRole, setCurrentRole] = useState<ClinicalRole>('physician');
@@ -93,6 +97,16 @@ export default function App() {
           </div>
 
           <VitalControls vitals={state.vitals} setVitals={actions.setVitals} />
+
+          {/* Render Sandbox only for the Physician role */}
+          {currentRole === 'physician' && <SandboxControls />}
+          
+          {/* UPDATE THIS LINE to pass vitals and risk to the Nurse Queue */}
+          {currentRole === 'nurse' && <NurseTaskQueue vitals={state.vitals} cascadeRisk={state.cascadeRisk} />}
+          
+          {/* Render Patient Hub only for the Patient role */}
+          {currentRole === 'patient' && <PatientHub vitals={state.vitals} cascadeRisk={state.cascadeRisk} />}
+          
         </div>
 
         <div className="xl:col-span-4 flex flex-col gap-6">
@@ -106,10 +120,22 @@ export default function App() {
               <span className="text-sm text-slate-400 uppercase tracking-widest font-bold mt-2">Total Cascade Risk</span>
             </div>
           </div>
+
+          {/* Render the SHAP Neural Explainer */}
+          <ShapExplainer shapData={state.shap || []} />
+
+          {/* ADD THIS NEW COMPONENT: Quantum VQC Activations Matrix */}
+          <QuantumVisualizer activations={state.vqc_activations || []} />
+
         </div>
 
         <div className="xl:col-span-4 flex flex-col gap-6">
-          <OrganGraph vitals={state.vitals} />
+          {/* Passed the new organ_hazards from the Python payload, with a safety fallback */}
+          <OrganGraph 
+            hazards={state.organ_hazards || {
+              cardiovascular: 0, pulmonary: 0, renal: 0, hepatic: 0, cns: 0
+            }} 
+          />
         </div>
       </main>
     </div>
