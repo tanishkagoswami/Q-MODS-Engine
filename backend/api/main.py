@@ -373,16 +373,33 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
 @app.get("/api/history/{metric}")
 async def get_metric_history(metric: str, limit: int = 20):
     """
-    Fetches the last 'limit' records for a vital sign to feed deep-dive modal graphs.
+    Fetches the last 'limit' records for an organ hazard or vital sign to feed deep-dive modal graphs.
     """
+    # 1. Fetch BOTH organ_hazards and vitals from the database
     cursor = snapshots_collection.find(
         {}, 
-        {"_id": 0, "timestamp": 1, f"vitals.{metric}": 1}
+        {"_id": 0, "timestamp": 1, "organ_hazards": 1, "vitals": 1}
     ).sort("timestamp", -1).limit(limit)
     
-    history = list(cursor)
-    history.reverse()  # Return in chronological order
-    return {"metric": metric, "history": history}
+    raw_history = list(cursor)
+    
+    formatted_history = []
+    for doc in raw_history:
+        val = 0
+        # 2. Automatically find the metric whether it's stored as an organ hazard or a vital sign
+        if "organ_hazards" in doc and metric in doc["organ_hazards"]:
+            val = doc["organ_hazards"][metric]
+        elif "vitals" in doc and metric in doc["vitals"]:
+            val = doc["vitals"][metric]
+            
+        # 3. Format it so the React HistoryModal doesn't need to change its mapping logic
+        formatted_history.append({
+            "timestamp": doc.get("timestamp"),
+            "vitals": {metric: val}
+        })
+        
+    formatted_history.reverse()  # Return in chronological order
+    return {"metric": metric, "history": formatted_history}
 
 @app.post("/api/nurse/analyze")
 async def analyze_clinical_state(state: ClinicalState):
