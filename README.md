@@ -18,12 +18,27 @@ ICU telemetry today is highly reactive. Alarms sound only *after* a patient's vi
 
 ## Screenshots
 
-| | |
-|---|---|
-| **Interactive Digital Twin:** Systemic cascade warning and glowing organ hazard mapping. High-frequency telemetry streams render live alongside overall cascade probability.<br>![Digital Twin](Screenshot%202026-10-27%20010121.jpg) | **MARL Intervention Sandbox:** Simulate pharmacological therapies (Vasopressors, IV Fluids, Diuretics). AI instantly evaluates the intervention and adjusts the patient's predicted trajectory.<br>![MARL Sandbox](Screenshot%202026-10-27%20010157.png) |
-| **Historical Trajectory (Cold Storage):** Live animated trendlines pulling from MongoDB. Visualizes the exact temporal deterioration or recovery of specific organs (e.g., Heart, Brain).<br>![Trajectory](Screenshot%202026-10-27%20010146.png) | **Dynamic Nurse Task Queue:** Backend AI-prioritized interventions. Translates live risk spikes (e.g., GCS drops, Renal decline) into immediate, scored tasks for the nursing staff.<br>![Nurse Queue](Screenshot%202026-10-27%20010252.jpg) |
-| **Quantum VQC & SHAP Explainer:** Complete AI transparency. Live matrix visualization of the 128-Qubit Latent Embedding Space, accompanied by SHAP feature importance for clinical trust.<br>![Quantum VQC](Screenshot%202026-10-27%20010228.jpg) | *(Platform is responsive and highly optimized for low-latency browser rendering).* |
+### Interactive Digital Twin
+Systemic cascade warning and glowing organ hazard mapping. High-frequency telemetry streams render live alongside overall cascade probability.  
+![Digital Twin](Screenshot%202026-10-27%20010121.jpg)
 
+### MARL Intervention Sandbox
+Simulate pharmacological therapies (Vasopressors, IV Fluids, Diuretics). AI instantly evaluates the intervention and adjusts the patient's predicted trajectory.  
+![MARL Sandbox](Screenshot%202026-10-27%20010157.png)
+
+### Historical Trajectory (Cold Storage)
+Live animated trendlines pulling from MongoDB. Visualizes the exact temporal deterioration or recovery of specific organs (e.g., Heart, Brain).  
+![Trajectory](Screenshot%202026-10-27%20010146.jpg)
+
+### Dynamic Nurse Task Queue
+Backend AI-prioritized interventions. Translates live risk spikes (e.g., GCS drops, Renal decline) into immediate, scored tasks for the nursing staff.  
+![Nurse Queue](Screenshot%202026-10-27%20010252.jpg)
+
+### Quantum VQC & SHAP Explainer
+Complete AI transparency. Live matrix visualization of the 128-Qubit Latent Embedding Space, accompanied by SHAP feature importance for clinical trust.  
+![Quantum VQC](Screenshot%202026-10-27%20010228.jpg)
+
+*(Platform is responsive and optimized for low-latency browser rendering).*
 ---
 
 ## The Clinical Workspaces
