@@ -93,7 +93,7 @@ class STGCNBlock(nn.Module):
         
         # ---- Step 2: Spatial Graph Layer ----
         # Reshape to [Batch_Size, Num_Nodes, Seq_Length, Hidden_Channels]
-        s1 = t1_out.reshape(batch_size, num_nodes, -1, seq_len).permute(0, 2, 1, 3) # [B, T, N, Hidden_C]
+        s1 = t1_out.reshape(batch_size, num_nodes, -1, seq_len).permute(0, 3, 1, 2) # [B, T, N, Hidden_C]
         s_out_list = []
         
         # We propagate spatially across graph nodes for each temporal slice
