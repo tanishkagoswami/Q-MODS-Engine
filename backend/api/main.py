@@ -129,8 +129,8 @@ class ModelContext:
 ctx: Optional[ModelContext] = None
 
 # Initialize async Redis client (In-memory HFT broker)
-redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-
+redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
 async def async_mongo_flusher():
     """
     HFT Pattern: Background worker that wakes up every 5 seconds, 
