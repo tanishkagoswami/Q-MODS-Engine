@@ -32,8 +32,7 @@ export default function OrganGraph({ hazards }: OrganGraphProps) {
     const metric = metricMap[selectedOrgan.toLowerCase()];
     
     if (metric) {
-      fetch(`http://127.0.0.1:8000/api/history/${metric}`)
-        .then(res => res.json())
+      fetch(`https://qmods-backend.onrender.com/api/history/${metric}`)        .then(res => res.json())
         .then(data => {
           // Format the data for Recharts
           const formatted = data.history.map((d: any) => ({

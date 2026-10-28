@@ -22,8 +22,7 @@ export default function SandboxControls() {
 
     try {
       // 1. Try to query the live Python MARL engine
-      const res = await fetch("http://127.0.0.1:8000/api/marl/step", {
-        method: "POST",
+      const res = await fetch("[https://qmods-backend.onrender.com/api/marl/step](https://qmods-backend.onrender.com/api/marl/step)", {        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           patho_action: [0.1, 0.05, 0.0],
@@ -65,8 +64,8 @@ export default function SandboxControls() {
     setSimResult(null);
     setTherapy([0.0, 0.0, 0.0, 0.0]);
     try {
-      await fetch("http://127.0.0.1:8000/api/marl/reset", { method: "POST" });
-    } catch {
+      await fetch("https://qmods-backend.onrender.com/api/marl/reset", { method: "POST" });    
+  } catch {
       // Silently catch if backend is offline
     }
   };

@@ -15,7 +15,7 @@ export default function HistoryModal({ organId, organName, onClose }: HistoryMod
   useEffect(() => {
     // 1. Wrap our fetch logic in a function so we can call it repeatedly
     const fetchHistory = () => {
-      fetch(`http://127.0.0.1:8000/api/history/${organId}`)
+      fetch(`https://qmods-backend.onrender.com/api/history/${organId}`)
         .then(res => res.json())
         .then(fetchedData => {
           // Extract the array from the history key

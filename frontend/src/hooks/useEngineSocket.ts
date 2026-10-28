@@ -69,8 +69,7 @@ export const useEngineSocket = () => {
   // --- Backend Connection Logic ---
   const toggleEngineMode = () => {
     if (!isBackendConnected) {
-      socketRef.current = new WebSocket("ws://127.0.0.1:8000/ws/telemetry");
-
+      socketRef.current = new WebSocket("wss://qmods-backend.onrender.com/ws/telemetry");
       socketRef.current.onopen = () => {
         setIsBackendConnected(true);
         setActiveMode('api');
