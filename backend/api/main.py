@@ -38,7 +38,6 @@ from src.graph.attention_edges import PhysiologicalAttentionEdges
 from src.models.classical_comp import WaveformTCNCompressor
 from src.models.quantum_vqc import QuantumVQCEncoder
 from src.models.stgcn import STGCN
-from src.explainability.shap_analyzer import ICUBiomarkerSHAPAnalyzer
 from src.explainability.gnn_explainer import PhysiologyGNNExplainer
 from src.marl.env_simulator import QMODSMultiAgentEnv
 
@@ -130,7 +129,7 @@ ctx: Optional[ModelContext] = None
 
 # Initialize async Redis client (In-memory HFT broker)
 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+redis_client = redis.Redis.from_url(redis_url, decode_responses=True, socket_timeout=3, socket_connect_timeout=3)
 async def async_mongo_flusher():
     """
     HFT Pattern: Background worker that wakes up every 5 seconds, 

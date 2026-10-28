@@ -1,5 +1,5 @@
 import torch
-from torch_geometric.data import Data
+import types
 import numpy as np
 import logging
 from typing import Dict, List, Tuple
@@ -91,31 +91,31 @@ class PhysiologyGraphBuilder:
         
         return x
 
-    def build_graph(self, patient_slice: Dict[str, float], sequence_id: int = 0) -> Data:
-        """
-        Constructs a complete PyTorch Geometric 'Data' object containing:
-        - x: Node feature matrix [5, 3]
-        - edge_index: Graph connection indices [2, 9]
-        - edge_attr: Dynamic edge weights initialized to baseline (1.0)
-        """
-        # Step 1: Map clinical features to our 5 organ nodes
-        x = self.map_features_to_nodes(patient_slice)
-        
-        # Step 2: Initialize edge attributes (weights)
-        # We start with baseline edge attributes of 1.0. These will be scaled later
-        # in Layer 2's temporal attention modules to show failure velocity.
-        num_edges = self.base_edges.size(1)
-        edge_attr = torch.ones((num_edges, 1), dtype=torch.float)
-        
-        # Step 3: Construct the PyG Data structure
-        graph_data = Data(
-            x=x,
-            edge_index=self.base_edges,
-            edge_attr=edge_attr,
-            seq_id=torch.tensor([sequence_id], dtype=torch.long)
-        )
-        
-        return graph_data
+    def build_graph(self, patient_slice: Dict[str, float], sequence_id: int = 0) -> types.SimpleNamespace:
+            """
+            Constructs a lightweight SimpleNamespace object containing:
+            - x: Node feature matrix [5, 3]
+            - edge_index: Graph connection indices [2, 9]
+            - edge_attr: Dynamic edge weights initialized to baseline (1.0)
+            """
+            # Step 1: Map clinical features to our 5 organ nodes
+            x = self.map_features_to_nodes(patient_slice)
+            
+            # Step 2: Initialize edge attributes (weights)
+            # We start with baseline edge attributes of 1.0. These will be scaled later
+            # in Layer 2's temporal attention modules to show failure velocity.
+            num_edges = self.base_edges.size(1)
+            edge_attr = torch.ones((num_edges, 1), dtype=torch.float)
+            
+            # Step 3: Construct the lightweight structure instead of PyG Data
+            graph_data = types.SimpleNamespace(
+                x=x,
+                edge_index=self.base_edges,
+                edge_attr=edge_attr,
+                seq_id=torch.tensor([sequence_id], dtype=torch.long)
+            )
+            
+            return graph_data
 
     def get_organ_name(self, node_idx: int) -> str:
         """Helper to return human-readable organ names for explainability"""

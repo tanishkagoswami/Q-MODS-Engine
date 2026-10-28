@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
 import logging
 from typing import Dict, Tuple
 
@@ -42,7 +41,21 @@ class TemporalGatedConv(nn.Module):
         lhs, rhs = torch.chunk(conv_out, 2, dim=1)
         return lhs * torch.sigmoid(rhs)
 
-
+class DenseGCNLayer(nn.Module):
+    """Same maths as torch_geometric's GCNConv (self-loops + symmetric normalisation)."""
+    def __init__(self, in_ch, out_ch):
+        super().__init__()
+        self.lin = nn.Linear(in_ch, out_ch, bias=False)
+        self.bias = nn.Parameter(torch.zeros(out_ch))
+    def forward(self, x, edge_index, edge_weight):
+        # x: [N, C], edge_index: [2, E] (row 0 = source, row 1 = target), edge_weight: [E]
+        n = x.size(0)
+        A = torch.zeros(n, n, dtype=x.dtype, device=x.device)
+        A[edge_index[1], edge_index[0]] = edge_weight.to(x.dtype)  # message goes source -> target
+        A = A + torch.eye(n, dtype=x.dtype, device=x.device)        # self-loops with weight 1
+        d = A.sum(dim=1).pow(-0.5)
+        d[torch.isinf(d)] = 0
+        return (d[:, None] * A * d[None, :]) @ self.lin(x) + self.bias
 class STGCNBlock(nn.Module):
     """
     A single Spatiotemporal Graph Convolutional Block.
@@ -57,8 +70,7 @@ class STGCNBlock(nn.Module):
         
         # Spatial Graph Convolution using PyTorch Geometric's GCNConv
         # Propagates failure states between connected organ nodes
-        self.spatial_gcn = GCNConv(hidden_channels, hidden_channels, add_self_loops=True)
-        
+        self.spatial_gcn = DenseGCNLayer(hidden_channels, hidden_channels)        
         # Second temporal gated convolution
         self.temp_conv2 = TemporalGatedConv(hidden_channels, out_channels)
         
