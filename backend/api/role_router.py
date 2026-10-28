@@ -53,13 +53,6 @@ def get_researcher_dashboard():
         "allowed_modules": ["Quantum Feature State Space", "TCN Embeddings", "Explainability Weights"],
         "instructions": "Supports export to PyTorch / PennyLane tensor formats."
     }
-from fastapi import APIRouter
-
-# Create a router specifically for stakeholder roles
-router = APIRouter(
-    prefix="/api/roles",
-    tags=["Stakeholder Roles"]
-)
 
 @router.get("/physician")
 async def get_physician_config():

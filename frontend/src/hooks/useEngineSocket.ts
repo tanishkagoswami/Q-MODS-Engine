@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { WS_BASE } from '../config';
 
 export interface Vitals {
   spo2: number;
@@ -59,6 +60,15 @@ export const useEngineSocket = () => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
+  // Cleanup socket on unmount (Task 2.3)
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+    };
+  }, []);
+
   // --- High-Performance Canvas Buffers ---
   const ecgBuffer = useRef<number[]>([]);
   const abpBuffer = useRef<number[]>([]);
@@ -68,8 +78,15 @@ export const useEngineSocket = () => {
 
   // --- Backend Connection Logic ---
   const toggleEngineMode = () => {
+    // Prevent double-clicking while it is already trying to connect (Task 2.3)
+    if (socketRef.current?.readyState === WebSocket.CONNECTING) {
+      return; 
+    }
+
     if (!isBackendConnected) {
-      socketRef.current = new WebSocket("wss://qmods-backend.onrender.com/ws/telemetry");
+      // Use dynamic config URL instead of hardcoded string
+      socketRef.current = new WebSocket(`${WS_BASE}/ws/telemetry`);
+      
       socketRef.current.onopen = () => {
         setIsBackendConnected(true);
         setActiveMode('api');
@@ -95,7 +112,8 @@ export const useEngineSocket = () => {
           }
 
           // B. Update React UI State from Python Payload
-          if (data.vitals) setVitals(data.vitals);
+          // TASK 3.8: Do NOT overwrite vitals state so the sandbox sliders remain usable and don't fight the stream
+          // We only update the dynamic charts.
           if (data.cascade_risk !== undefined) setCascadeRisk(data.cascade_risk);
           if (data.organ_hazards) setOrganHazards(data.organ_hazards);
           if (data.shap) setShap(data.shap);
@@ -103,8 +121,15 @@ export const useEngineSocket = () => {
         }
       };
 
-      socketRef.current.onerror = () => setIsBackendConnected(false);
-      socketRef.current.onclose = () => setIsBackendConnected(false);
+      // TASK 2.3: Fall back to local 'sim' mode on connection drop so the dashboard doesn't freeze
+      socketRef.current.onerror = () => {
+        setIsBackendConnected(false);
+        setActiveMode('sim');
+      };
+      socketRef.current.onclose = () => {
+        setIsBackendConnected(false);
+        setActiveMode('sim');
+      };
     } else {
       socketRef.current?.close();
       setIsBackendConnected(false);
@@ -182,7 +207,7 @@ export const useEngineSocket = () => {
       cascadeRisk, 
       organ_hazards: organHazards,
       shap ,
-      vqc_activations: vqcActivations // ADD THIS HERE
+      vqc_activations: vqcActivations
     },
     actions: { setIsPlaying, setIsAnomalyActive, setVitals, toggleEngineMode },
     buffers: { ecgBuffer, abpBuffer, respBuffer }

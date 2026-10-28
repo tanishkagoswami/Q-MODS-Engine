@@ -46,10 +46,10 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({ buffers, heartRa
           ctx.stroke();
         };
 
-        // Draw ECG (Green), ABP (Cyan), and RESP (Purple)
-        drawLine(buffers.ecgBuffer.current, '#34d399', 40, 25);
-        drawLine(buffers.abpBuffer.current, '#22d3ee', 110, 1.2);
-        drawLine(buffers.respBuffer.current, '#c084fc', 165, 15);
+        // Draw ECG (Green), ABP (Cyan), and RESP (Purple) in dedicated lanes
+        drawLine(buffers.ecgBuffer.current, '#34d399', 40, 25);     // Lane 1: Y 15-40
+        drawLine(buffers.abpBuffer.current, '#22d3ee', 166, 0.8);   // Lane 2: Y 70-110
+        drawLine(buffers.respBuffer.current, '#c084fc', 230, 5.0);  // Lane 3: Y 130-170
       }
 
       // Loop the drawing function on the browser's animation frame
@@ -75,6 +75,12 @@ export const WaveformCanvas: React.FC<WaveformCanvasProps> = ({ buffers, heartRa
       <div className="relative flex justify-between text-[10px] font-mono text-emerald-400 z-10 px-2 pointer-events-none">
         <span>ECG (mV)</span>
         <span>HR: {heartRate} bpm</span>
+      </div>
+      <div className="absolute top-[70px] left-5 text-[10px] font-mono text-cyan-400 z-10 pointer-events-none opacity-80">
+        <span>ABP (mmHg)</span>
+      </div>
+      <div className="absolute bottom-[20px] left-5 text-[10px] font-mono text-purple-400 z-10 pointer-events-none opacity-80">
+        <span>RESP (rpm)</span>
       </div>
     </div>
   );
