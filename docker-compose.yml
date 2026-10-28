@@ -13,14 +13,14 @@ services:
       - mongodb
     environment:
       # These variables let Docker containers talk to each other
-      - REDIS_HOST=redis
-      - MONGO_HOST=mongodb
+      - REDIS_URL=redis://redis:6379
+      - MONGO_URI=mongodb://mongodb:27017
 
   # The In-Memory HFT Broker
   redis:
     image: redis:alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
 
   # The Cold-Storage Database
   mongodb:

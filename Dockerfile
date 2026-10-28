@@ -1,5 +1,5 @@
 # Use a lightweight Python base image
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -18,4 +18,4 @@ WORKDIR /app/backend
 EXPOSE 8000
 
 # Command to boot the Uvicorn server
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

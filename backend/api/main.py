@@ -130,6 +130,7 @@ ctx: Optional[ModelContext] = None
 # Initialize async Redis client (In-memory HFT broker)
 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True, socket_timeout=3, socket_connect_timeout=3)
+
 async def async_mongo_flusher():
     """
     HFT Pattern: Background worker that wakes up every 5 seconds, 
@@ -137,12 +138,26 @@ async def async_mongo_flusher():
     """
     while True:
         await asyncio.sleep(5)
+        
+        # TASK 1.3: Skip reading from Redis if no clients are viewing the dashboard
+        if not manager.active_connections:
+            continue
+            
+        # TASK 1.4: Skip writing if MongoDB failed to connect or isn't configured
+        if snapshots_collection is None:
+            continue
+
         try:
+            # We must await this because we are using redis.asyncio 
             raw_state = await redis_client.get("latest_clinical_snapshot")
+            
             if raw_state:
                 snapshot = json.loads(raw_state)
                 snapshot["timestamp"] = datetime.now(timezone.utc)
-                snapshots_collection.insert_one(snapshot)
+                
+                # TASK 1.4: Push the blocking MongoDB write into a background worker thread
+                await asyncio.to_thread(snapshots_collection.insert_one, snapshot)
+                
         except Exception as e:
             logger.error(f"Async Mongo batch write failed: {e}")
 
@@ -158,9 +173,20 @@ async def startup_event():
 
 # --- Endpoints ---
 
+@app.get("/")
+def read_root():
+    return {"name": "Q-MODS Engine API", "docs": "/docs", "health": "/health"}
+
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy", "components": {"cuda_available": torch.cuda.is_available()}}
+def health_check():
+    if ctx is None:
+        raise HTTPException(status_code=503, detail="Models not loaded yet.")
+    return {
+        "status": "healthy",
+        "models_loaded": True,
+        "redis": "configured" if redis_url else "missing",
+        "mongo": "configured" if snapshots_collection is not None else "missing"
+    }
 
 @app.post("/api/predict")
 async def predict_risk(data: PatientSliceInput):
@@ -308,6 +334,7 @@ async def reset_marl_sandbox():
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    loop_count = 0
     try:
         while True:
             # 1. Generate live telemetry
@@ -346,12 +373,17 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 "cns": round(random.uniform(10, 80), 1)
             }
 
-            # 5. NEW: Ultra-low latency write to in-memory Redis cache (Sub-millisecond)
-            await redis_client.set("latest_clinical_snapshot", json.dumps({
-                "vitals": current_vitals,
-                "cascade_risk": current_risk,
-                "organ_hazards": current_hazards
-            }))
+            # 5. Ultra-low latency write to in-memory Redis cache (Sub-millisecond)
+            # TASK 1.3 & 1.5: Throttled to every 5 seconds and protected by try/except
+            if loop_count % 5 == 0:
+                try:
+                    await redis_client.set("latest_clinical_snapshot", json.dumps({
+                        "vitals": current_vitals,
+                        "cascade_risk": current_risk,
+                        "organ_hazards": current_hazards
+                    }))
+                except Exception as e:
+                    logger.warning(f"Redis write failed: {e}")
 
             # 6. Send EVERYTHING to the React frontend
             payload = {
@@ -365,8 +397,13 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
             }
 
             await websocket.send_json(payload)
-            await asyncio.sleep(1.0) # Throttled to ~5Hz (clean, readable updates)
+            loop_count += 1
+            await asyncio.sleep(1.0) # Throttled to 1 update per second
+            
     except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        logger.warning(f"WebSocket error: {e}")
         manager.disconnect(websocket)
 
 @app.get("/api/history/{metric}")
@@ -374,24 +411,29 @@ async def get_metric_history(metric: str, limit: int = 20):
     """
     Fetches the last 'limit' records for an organ hazard or vital sign to feed deep-dive modal graphs.
     """
-    # 1. Fetch BOTH organ_hazards and vitals from the database
-    cursor = snapshots_collection.find(
-        {}, 
-        {"_id": 0, "timestamp": 1, "organ_hazards": 1, "vitals": 1}
-    ).sort("timestamp", -1).limit(limit)
-    
-    raw_history = list(cursor)
+    # TASK 1.4: Fast fail if Mongo isn't configured
+    if snapshots_collection is None:
+        raise HTTPException(status_code=503, detail="History storage not configured")
+        
+    try:
+        # TASK 1.4: Push the blocking MongoDB find into a background thread
+        raw_history = await asyncio.to_thread(
+            lambda: list(snapshots_collection.find(
+                {}, 
+                {"_id": 0, "timestamp": 1, "organ_hazards": 1, "vitals": 1}
+            ).sort("timestamp", -1).limit(limit))
+        )
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database error: {e}")
     
     formatted_history = []
     for doc in raw_history:
         val = 0
-        # 2. Automatically find the metric whether it's stored as an organ hazard or a vital sign
         if "organ_hazards" in doc and metric in doc["organ_hazards"]:
             val = doc["organ_hazards"][metric]
         elif "vitals" in doc and metric in doc["vitals"]:
             val = doc["vitals"][metric]
             
-        # 3. Format it so the React HistoryModal doesn't need to change its mapping logic
         formatted_history.append({
             "timestamp": doc.get("timestamp"),
             "vitals": {metric: val}
@@ -406,9 +448,15 @@ async def analyze_clinical_state(state: ClinicalState):
     Accepts real-time vital streams from the frontend, compares them against 
     the most recent MongoDB database snapshot, and generates dynamic tasks.
     """
-    # 1. Fetch the most recent historical snapshot to calculate trajectory (deltas)
-    cursor = snapshots_collection.find({}, {"_id": 0}).sort("timestamp", -1).limit(1)
-    snapshots = list(cursor)
+    snapshots = []
+    # TASK 1.4: Push blocking MongoDB call to thread and gracefully degrade if it fails
+    if snapshots_collection is not None:
+        try:
+            snapshots = await asyncio.to_thread(
+                lambda: list(snapshots_collection.find({}, {"_id": 0}).sort("timestamp", -1).limit(1))
+            )
+        except Exception as e:
+            logger.warning(f"Mongo fetch failed in nurse analyze: {e}")
 
     base_tasks = [
         {"id": "t1", "task": "Administer scheduled antibiotics", "priority": "routine", "urgency_score": 20},
