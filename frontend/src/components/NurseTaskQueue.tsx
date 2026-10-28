@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, Clock, Activity, ArrowDownUp } from 'lucide-react';
+import { API_BASE } from '../config';
 
 interface Vitals {
   spo2: number;
@@ -25,35 +26,47 @@ export default function NurseTaskQueue({ vitals, cascadeRisk }: NurseTaskQueuePr
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Send actual UI data to the Python Engine for AI analysis whenever vitals change
+  // TASK 3.12 FIX: Implement debouncing and an AbortController so rapid slider movements 
+  // only send a single request 300ms after the user stops dragging.
   useEffect(() => {
-    const analyzeDataWithBackend = async () => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    const timeoutId = setTimeout(async () => {
       setIsSyncing(true);
       try {
-        const res = await fetch("https://qmods-backend.onrender.com/api/nurse/analyze", {
+        const res = await fetch(`${API_BASE}/api/nurse/analyze`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             vitals: vitals, 
             cascade_risk: cascadeRisk 
-          })
+          }),
+          signal // Attach the abort signal
         });
         
         if (res.ok) {
           const data = await res.json();
           setTasks(data.tasks);
         }
-      } catch (err) {
-        console.error("Backend analysis failed. Engine offline.", err);
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.log('Aborted older analyze request');
+        } else {
+          console.error("Backend analysis failed. Engine offline.", err);
+        }
       } finally {
-        // Small timeout for visual effect on the Live Sync indicator
         setTimeout(() => setIsSyncing(false), 300);
       }
-    };
+    }, 300); // Wait 300ms before firing
 
-    analyzeDataWithBackend();
-    
-  }, [vitals, cascadeRisk]); // Dependency array: Re-runs instantly upon slider movement
+    // Cleanup function: If vitals change again BEFORE the 300ms is up,
+    // clear the timer and abort any in-flight request.
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [vitals, cascadeRisk]); 
 
   const getPriorityStyles = (priority: string) => {
     switch (priority) {

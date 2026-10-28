@@ -1,4 +1,5 @@
 import { Download, Heart, Wind } from 'lucide-react';
+
 interface Vitals {
   spo2: number;
   creatinine: number;
@@ -14,10 +15,11 @@ interface PatientHubProps {
 
 export default function PatientHub({ vitals, cascadeRisk }: PatientHubProps) {
   // Translate system risk into a traffic light status
+  // TASK 3.11 FIX: Added explicit 'dot' classes so Tailwind doesn't purge them during the build
   const getStatus = () => {
-    if (cascadeRisk < 30) return { label: 'Stable & Resting', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' };
-    if (cascadeRisk < 60) return { label: 'Close Monitoring', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' };
-    return { label: 'Critical Care Active', color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/30' };
+    if (cascadeRisk < 30) return { label: 'Stable & Resting', color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', dot: 'bg-emerald-500' };
+    if (cascadeRisk < 60) return { label: 'Close Monitoring', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', dot: 'bg-amber-500' };
+    return { label: 'Critical Care Active', color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/30', dot: 'bg-rose-500' };
   };
 
   // Generate plain-English summary
@@ -69,8 +71,9 @@ export default function PatientHub({ vitals, cascadeRisk }: PatientHubProps) {
       <div className={`p-4 rounded-xl border ${status.bg} ${status.border} flex items-center justify-between`}>
         <div className="flex items-center gap-3">
           <div className="relative flex h-3 w-3">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${status.bg.replace('/10', '')}`}></span>
-            <span className={`relative inline-flex rounded-full h-3 w-3 ${status.bg.replace('/10', '')}`}></span>
+            {/* TASK 3.11 FIX: Used the explicitly defined 'dot' class instead of string replacement */}
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${status.dot}`}></span>
+            <span className={`relative inline-flex rounded-full h-3 w-3 ${status.dot}`}></span>
           </div>
           <span className={`font-bold uppercase tracking-wider text-sm ${status.color}`}>
             Current Status: {status.label}
