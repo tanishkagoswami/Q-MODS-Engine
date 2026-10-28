@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Vitals } from '../hooks/useEngineSocket';
 
 // Define the props to accept the state and the state-updater function from the hook
@@ -10,31 +10,53 @@ interface VitalControlsProps {
 export const VitalControls: React.FC<VitalControlsProps> = ({ vitals, setVitals }) => {
   
   // MARL Intervention Sandbox States (0-100% Dose)
-  const [vasopressors, setVasopressors] = useState<number>(0);
+  // FIXED: Renamed to match the simulator's exact expected therapies
   const [ivFluids, setIvFluids] = useState<number>(0);
-  const [inotropes, setInotropes] = useState<number>(0);
-  const [diuretics, setDiuretics] = useState<number>(0);
+  const [vasopressors, setVasopressors] = useState<number>(0);
+  const [oxygenSupport, setOxygenSupport] = useState<number>(0);
+  const [dialysis, setDialysis] = useState<number>(0);
 
-  // NEW: State for visual UI feedback
   const [simFeedback, setSimFeedback] = useState<{message: string, status: 'success' | 'danger' | 'loading' | null}>({ message: '', status: null });
+
+  // Track the last mean organ state to determine if the patient is actually improving or worsening
+  const [lastOrganMean, setLastOrganMean] = useState<number | null>(null);
+
+  // Initialize the simulator on mount to get a baseline observation
+  useEffect(() => {
+    const resetSimulator = async () => {
+      try {
+        const res = await fetch('https://qmods-backend.onrender.com/api/marl/reset', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          const organs = data.observation?.organ_states || data.organ_states || [];
+          if (organs.length > 0) {
+            setLastOrganMean(organs.reduce((a: number, b: number) => a + b, 0) / organs.length);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to initialize MARL environment:", e);
+      }
+    };
+    resetSimulator();
+  }, []);
 
   // Helper function to dynamically update a specific vital
   const handleSliderChange = (key: keyof Vitals, value: string) => {
     setVitals(prev => ({ ...prev, [key]: Number(value) }));
   };
 
-  // UPDATED: Block 3 API Call with UI Feedback
   const handleRunSimulation = async () => {
     try {
       setSimFeedback({ message: 'Running Quantum MARL Simulation...', status: 'loading' });
 
       const payload = {
         patho_action: [0.0, 0.0, 0.0], // Default disease progression vector
+        // FIXED ORDER: [IV fluids, Vasopressor, Oxygen, Dialysis] to match Python backend
         therapy_action: [
-          vasopressors / 100, 
           ivFluids / 100, 
-          inotropes / 100, 
-          diuretics / 100
+          vasopressors / 100, 
+          oxygenSupport / 100, 
+          dialysis / 100
         ]
       };
 
@@ -44,28 +66,38 @@ export const VitalControls: React.FC<VitalControlsProps> = ({ vitals, setVitals 
         body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
-      
-      
-      // Extract the AI's reward for the therapy agent
-      const aiReward = data.rewards?.therapy_agent || 0;
-
-      if (aiReward >= 0) {
-        setSimFeedback({ message: `✅ Therapy Optimal! AI Confidence: +${aiReward.toFixed(2)}. Patient Stabilizing.`, status: 'success' });
-        // Force the sliders to visually recover to healthy baseline
-        setVitals(prev => ({ ...prev, spo2: 98, heart_rate: 75, gcs: 15, creatinine: 1.0, bilirubin: 0.8 }));
-      } else {
-        setSimFeedback({ message: `⚠️ Intervention Sub-optimal. AI Penalty: ${aiReward.toFixed(2)}. Risk increasing.`, status: 'danger' });
-        // Force sliders into a crash state
-        setVitals(prev => ({ ...prev, spo2: 82, heart_rate: 145, gcs: 8 }));
+      // FIXED: Actually check if the request failed instead of defaulting to success
+      if (!response.ok) {
+        throw new Error(`Server Error: ${response.status}`);
       }
+
+      const data = await response.json();
+      const aiReward = data.rewards?.therapy_agent || data.reward || 0;
+      
+      // Extract organ states and calculate the mean
+      const currentOrgans = data.observation?.organ_states || data.organ_states || [];
+      const currentMean = currentOrgans.length > 0 
+        ? currentOrgans.reduce((a: number, b: number) => a + b, 0) / currentOrgans.length 
+        : 0;
+
+      // FIXED: Compare against the previous state (lower organ failure means improving)
+      const isImproving = lastOrganMean !== null && currentMean < lastOrganMean;
+      
+      if (isImproving) {
+        setSimFeedback({ message: `✅ Patient Improving! AI Reward: ${aiReward.toFixed(2)}. Organ Risk Decreasing.`, status: 'success' });
+      } else {
+        setSimFeedback({ message: `⚠️ Intervention Sub-optimal. AI Reward: ${aiReward.toFixed(2)}. Risk increasing.`, status: 'danger' });
+      }
+
+      // Save the new state for the next step comparison
+      setLastOrganMean(currentMean);
 
       // Clear the message after 4 seconds
       setTimeout(() => setSimFeedback({ message: '', status: null }), 4000);
       
     } catch (error) {
       console.error("Failed to run MARL simulation:", error);
-      setSimFeedback({ message: 'Simulation Pipeline Offline', status: 'danger' });
+      setSimFeedback({ message: 'Simulation Pipeline Offline or Failed', status: 'danger' });
     }
   };
 
@@ -164,21 +196,7 @@ export const VitalControls: React.FC<VitalControlsProps> = ({ vitals, setVitals 
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          {/* Vasopressors */}
-          <div>
-            <div className="flex justify-between text-xs font-semibold mb-1">
-              <span className="text-slate-300">Vasopressors</span>
-              <span className="text-blue-400">{vasopressors}% Dose</span>
-            </div>
-            <input 
-              type="range" min="0" max="100" 
-              value={vasopressors}
-              onChange={(e) => setVasopressors(Number(e.target.value))}
-              className="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
-            />
-          </div>
-
-          {/* IV Fluids */}
+          {/* IV Fluids (Replaces Old Vasopressors Slot) */}
           <div>
             <div className="flex justify-between text-xs font-semibold mb-1">
               <span className="text-slate-300">IV Fluids</span>
@@ -192,30 +210,44 @@ export const VitalControls: React.FC<VitalControlsProps> = ({ vitals, setVitals 
             />
           </div>
 
-          {/* Inotropes */}
+          {/* Vasopressors (Replaces Old IV Fluids Slot) */}
           <div>
             <div className="flex justify-between text-xs font-semibold mb-1">
-              <span className="text-slate-300">Inotropes</span>
-              <span className="text-blue-400">{inotropes}% Dose</span>
+              <span className="text-slate-300">Vasopressors</span>
+              <span className="text-blue-400">{vasopressors}% Dose</span>
             </div>
             <input 
               type="range" min="0" max="100" 
-              value={inotropes}
-              onChange={(e) => setInotropes(Number(e.target.value))}
+              value={vasopressors}
+              onChange={(e) => setVasopressors(Number(e.target.value))}
               className="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
             />
           </div>
 
-          {/* Diuretics */}
+          {/* Oxygen Support (Replaces Inotropes) */}
           <div>
             <div className="flex justify-between text-xs font-semibold mb-1">
-              <span className="text-slate-300">Diuretics</span>
-              <span className="text-blue-400">{diuretics}% Dose</span>
+              <span className="text-slate-300">Oxygen (FiO2/PEEP)</span>
+              <span className="text-blue-400">{oxygenSupport}% Dose</span>
             </div>
             <input 
               type="range" min="0" max="100" 
-              value={diuretics}
-              onChange={(e) => setDiuretics(Number(e.target.value))}
+              value={oxygenSupport}
+              onChange={(e) => setOxygenSupport(Number(e.target.value))}
+              className="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+            />
+          </div>
+
+          {/* Dialysis/CRRT (Replaces Diuretics) */}
+          <div>
+            <div className="flex justify-between text-xs font-semibold mb-1">
+              <span className="text-slate-300">Dialysis (CRRT)</span>
+              <span className="text-blue-400">{dialysis}% Dose</span>
+            </div>
+            <input 
+              type="range" min="0" max="100" 
+              value={dialysis}
+              onChange={(e) => setDialysis(Number(e.target.value))}
               className="w-full accent-blue-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
             />
           </div>

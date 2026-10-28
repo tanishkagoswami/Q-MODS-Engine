@@ -19,8 +19,8 @@ import asyncio
 import random
 from api.role_router import router as role_router
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import Dict, List, Any, Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timezone
 import importlib.util
 
@@ -62,10 +62,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register Sub-Routers
-app.include_router(role_router)
-app.include_router(stream_router)
-
 # --- Define Request and Response Schemas ---
 class PatientSliceInput(BaseModel):
     subject_id: int = Field(..., example=1001)
@@ -84,9 +80,39 @@ class PatientSliceInput(BaseModel):
         }
     )
 
+    @model_validator(mode='after')
+    def validate_waveforms(self) -> 'PatientSliceInput':
+        waves = self.waveforms
+        provided_lengths = {k: len(v) for k, v in waves.items() if len(v) > 0}
+        
+        if not provided_lengths:
+            target_len = 100 
+        else:
+            target_len = list(provided_lengths.values())[0]
+            if any(l != target_len for l in provided_lengths.values()):
+                raise ValueError(f"Waveform length mismatch: {provided_lengths}. All provided waveforms must have the exact same length.")
+                
+        if target_len < 10:
+            raise ValueError(f"Waveforms must have at least 10 data points (got {target_len}).")
+            
+        for ch in ["ECG", "ABP", "RESP"]:
+            if ch not in waves or len(waves[ch]) == 0:
+                waves[ch] = [0.0] * target_len
+                
+        self.waveforms = waves
+        return self
+
 class MARLActionInput(BaseModel):
-    patho_action: List[float] = Field(..., min_items=3, max_items=3, example=[0.1, 0.05, 0.0])
-    therapy_action: List[float] = Field(..., min_items=4, max_items=4, example=[0.2, 0.1, 0.4, 0.0])
+    patho_action: List[float] = Field(
+        ..., 
+        min_length=3, max_length=3, 
+        json_schema_extra={"example": [0.1, 0.05, 0.0]}
+    )
+    therapy_action: List[float] = Field(
+        ..., 
+        min_length=4, max_length=4, 
+        json_schema_extra={"example": [0.2, 0.1, 0.4, 0.0]}
+    )
 
 class ClinicalState(BaseModel):
     vitals: dict
@@ -132,32 +158,17 @@ redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.Redis.from_url(redis_url, decode_responses=True, socket_timeout=3, socket_connect_timeout=3)
 
 async def async_mongo_flusher():
-    """
-    HFT Pattern: Background worker that wakes up every 5 seconds, 
-    pulls the latest state from the ultra-fast Redis cache, and writes it to MongoDB.
-    """
     while True:
         await asyncio.sleep(5)
-        
-        # TASK 1.3: Skip reading from Redis if no clients are viewing the dashboard
-        if not manager.active_connections:
-            continue
-            
-        # TASK 1.4: Skip writing if MongoDB failed to connect or isn't configured
-        if snapshots_collection is None:
+        if not manager.active_connections or snapshots_collection is None:
             continue
 
         try:
-            # We must await this because we are using redis.asyncio 
             raw_state = await redis_client.get("latest_clinical_snapshot")
-            
             if raw_state:
                 snapshot = json.loads(raw_state)
                 snapshot["timestamp"] = datetime.now(timezone.utc)
-                
-                # TASK 1.4: Push the blocking MongoDB write into a background worker thread
                 await asyncio.to_thread(snapshots_collection.insert_one, snapshot)
-                
         except Exception as e:
             logger.error(f"Async Mongo batch write failed: {e}")
 
@@ -165,11 +176,45 @@ async def async_mongo_flusher():
 async def startup_event():
     global ctx
     ctx = ModelContext()
-    
-    # Fire up the background asynchronous flusher
     asyncio.create_task(async_mongo_flusher())
-    
     logger.info("Application context fully loaded. Async Mongo flusher active.")
+
+# TASK 3.6 FIX: Fixed feature order to ensure consistent array mapping
+FEATURE_ORDER = [
+    "creatinine", "bun", "urine_output", "spo2", "respiratory_rate",
+    "pao2_fio2", "heart_rate", "mean_arterial_pressure", "systolic_bp",
+    "bilirubin_total", "alt", "ast", "gcs", "pupil_reaction", "temperature"
+]
+
+# TASK 3.6 FIX: Centralized model input building to eliminate code duplication
+def build_model_inputs(data: PatientSliceInput, context: ModelContext) -> Tuple[torch.Tensor, torch.Tensor]:
+    ecg = data.waveforms["ECG"]
+    abp = data.waveforms["ABP"]
+    resp = data.waveforms["RESP"]
+    
+    waveform_tensor = torch.tensor([[ecg, abp, resp]], dtype=torch.float32)
+    with torch.no_grad():
+        waveform_emb = context.tcn_compressor(waveform_tensor)
+
+    raw_labs = np.zeros(64, dtype=np.float32)
+    for i, name in enumerate(FEATURE_ORDER):
+        raw_labs[i] = data.vitals_and_labs.get(name, 0.0)
+        
+    lab_tensor = torch.tensor([raw_labs], dtype=torch.float32)
+
+    with torch.no_grad():
+        patient_state_vector = context.quantum_encoder(waveform_emb, lab_tensor)
+
+    node_features = context.graph_builder.map_features_to_nodes(data.vitals_and_labs)
+    
+    with torch.no_grad():
+        edge_weights = context.attention_net(node_features, context.graph_builder.base_edges)
+
+    seq_len = 10
+    history_tensor = patient_state_vector.unsqueeze(1).unsqueeze(1).expand(1, 5, seq_len, 128)
+    
+    return history_tensor, edge_weights
+
 
 # --- Endpoints ---
 
@@ -194,30 +239,7 @@ async def predict_risk(data: PatientSliceInput):
         raise HTTPException(status_code=503, detail="Models not loaded yet.")
 
     try:
-        ecg = data.waveforms.get("ECG", [0.0] * 100)
-        abp = data.waveforms.get("ABP", [0.0] * 100)
-        resp = data.waveforms.get("RESP", [0.0] * 100)
-        
-        waveform_tensor = torch.tensor([[ecg, abp, resp]], dtype=torch.float32)
-        with torch.no_grad():
-            waveform_emb = ctx.tcn_compressor(waveform_tensor)
-
-        raw_labs = np.zeros(64, dtype=np.float32)
-        for i, val in enumerate(data.vitals_and_labs.values()):
-            if i < 64:
-                raw_labs[i] = val
-        lab_tensor = torch.tensor([raw_labs], dtype=torch.float32)
-
-        with torch.no_grad():
-            patient_state_vector = ctx.quantum_encoder(waveform_emb, lab_tensor)
-
-        node_features = ctx.graph_builder.map_features_to_nodes(data.vitals_and_labs)
-        
-        with torch.no_grad():
-            edge_weights = ctx.attention_net(node_features, ctx.graph_builder.base_edges)
-
-        seq_len = 10
-        history_tensor = patient_state_vector.unsqueeze(1).unsqueeze(1).expand(1, 5, seq_len, 128)
+        history_tensor, edge_weights = build_model_inputs(data, ctx)
 
         with torch.no_grad():
             organ_hazards, cascade_alert_score = ctx.stgcn_model(
@@ -246,28 +268,7 @@ async def explain_gnn_pathways(data: PatientSliceInput):
         raise HTTPException(status_code=503, detail="Models not loaded yet.")
 
     try:
-        ecg = data.waveforms.get("ECG", [0.0] * 100)
-        abp = data.waveforms.get("ABP", [0.0] * 100)
-        resp = data.waveforms.get("RESP", [0.0] * 100)
-        
-        waveform_tensor = torch.tensor([[ecg, abp, resp]], dtype=torch.float32)
-        with torch.no_grad():
-            waveform_emb = ctx.tcn_compressor(waveform_tensor)
-            
-        raw_labs = np.zeros(64, dtype=np.float32)
-        for i, val in enumerate(data.vitals_and_labs.values()):
-            if i < 64: raw_labs[i] = val
-        lab_tensor = torch.tensor([raw_labs], dtype=torch.float32)
-
-        with torch.no_grad():
-            patient_state_vector = ctx.quantum_encoder(waveform_emb, lab_tensor)
-
-        node_features = ctx.graph_builder.map_features_to_nodes(data.vitals_and_labs)
-        with torch.no_grad():
-            edge_weights = ctx.attention_net(node_features, ctx.graph_builder.base_edges)
-
-        seq_len = 10
-        history_tensor = patient_state_vector.unsqueeze(1).unsqueeze(1).expand(1, 5, seq_len, 128)
+        history_tensor, edge_weights = build_model_inputs(data, ctx)
 
         explanations = ctx.gnn_explainer.explain_cascade(
             history_tensor, ctx.graph_builder.base_edges, edge_weights
@@ -288,13 +289,23 @@ async def step_marl_sandbox(actions: MARLActionInput):
         raise HTTPException(status_code=503, detail="Simulator not initialized.")
 
     try:
+        p_act = np.clip(actions.patho_action, 0.0, 1.0)
+        t_act = np.clip(actions.therapy_action, 0.0, 1.0)
+
         action_dict = {
-            "patho_agent": np.array(actions.patho_action, dtype=np.float32),
-            "therapy_agent": np.array(actions.therapy_action, dtype=np.float32)
+            "patho_agent": np.array(p_act, dtype=np.float32),
+            "therapy_agent": np.array(t_act, dtype=np.float32)
         }
         
         obs, rewards, terminated, truncated, info = ctx.marl_env.step(action_dict)
         
+        is_terminated = terminated.get("__all__", False)
+        is_truncated = truncated.get("__all__", False)
+        
+        if is_terminated or is_truncated:
+            logger.info("Episode ended. Resetting MARL environment.")
+            ctx.marl_env.reset()
+
         obs_serializable = {
             agent: {
                 "organ_states": [float(x) for x in state["organ_states"]],
@@ -307,8 +318,8 @@ async def step_marl_sandbox(actions: MARLActionInput):
             "current_step": ctx.marl_env.current_step,
             "observation": obs_serializable,
             "rewards": {agent: float(r) for agent, r in rewards.items()},
-            "terminated": terminated["__all__"],
-            "truncated": truncated["__all__"]
+            "terminated": is_terminated,
+            "truncated": is_truncated
         }
 
     except Exception as e:
@@ -330,14 +341,12 @@ async def reset_marl_sandbox():
     }
     return {"status": "reset_success", "observation": obs_serializable}
 
-
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     loop_count = 0
     try:
         while True:
-            # 1. Generate live telemetry
             hr_val = random.randint(70, 115)
             telemetry_data = {
                 "ecg": [round(random.uniform(-0.5, 1.5), 3) for _ in range(10)],
@@ -346,17 +355,14 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 "hr": hr_val
             }
             
-            # 2. Get active 128-dim quantum state array
             vqc_activations = [round(random.uniform(-1.0, 1.0), 4) for _ in range(128)]
 
-            # 3. Model Explainability (SHAP Values)
             shap_data = [
                 {"feature": "Oxygen Saturation (SpO2)", "score": 0.3500},
                 {"feature": "Heart Rate Elevation", "score": 0.2800},
                 {"feature": "Serum Creatinine Level", "score": 0.2800}
             ]
 
-            # 4. Generate Vitals and Hazards continuously for the React UI
             current_vitals = {
                 "spo2": round(random.uniform(92.0, 99.0), 1),
                 "heart_rate": hr_val,
@@ -373,8 +379,6 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 "cns": round(random.uniform(10, 80), 1)
             }
 
-            # 5. Ultra-low latency write to in-memory Redis cache (Sub-millisecond)
-            # TASK 1.3 & 1.5: Throttled to every 5 seconds and protected by try/except
             if loop_count % 5 == 0:
                 try:
                     await redis_client.set("latest_clinical_snapshot", json.dumps({
@@ -385,7 +389,6 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 except Exception as e:
                     logger.warning(f"Redis write failed: {e}")
 
-            # 6. Send EVERYTHING to the React frontend
             payload = {
                 "type": "telemetry_update",
                 "telemetry": telemetry_data,
@@ -398,7 +401,7 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
 
             await websocket.send_json(payload)
             loop_count += 1
-            await asyncio.sleep(1.0) # Throttled to 1 update per second
+            await asyncio.sleep(1.0)
             
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -408,15 +411,10 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
 
 @app.get("/api/history/{metric}")
 async def get_metric_history(metric: str, limit: int = 20):
-    """
-    Fetches the last 'limit' records for an organ hazard or vital sign to feed deep-dive modal graphs.
-    """
-    # TASK 1.4: Fast fail if Mongo isn't configured
     if snapshots_collection is None:
         raise HTTPException(status_code=503, detail="History storage not configured")
         
     try:
-        # TASK 1.4: Push the blocking MongoDB find into a background thread
         raw_history = await asyncio.to_thread(
             lambda: list(snapshots_collection.find(
                 {}, 
@@ -439,17 +437,12 @@ async def get_metric_history(metric: str, limit: int = 20):
             "vitals": {metric: val}
         })
         
-    formatted_history.reverse()  # Return in chronological order
+    formatted_history.reverse()
     return {"metric": metric, "history": formatted_history}
 
 @app.post("/api/nurse/analyze")
 async def analyze_clinical_state(state: ClinicalState):
-    """
-    Accepts real-time vital streams from the frontend, compares them against 
-    the most recent MongoDB database snapshot, and generates dynamic tasks.
-    """
     snapshots = []
-    # TASK 1.4: Push blocking MongoDB call to thread and gracefully degrade if it fails
     if snapshots_collection is not None:
         try:
             snapshots = await asyncio.to_thread(
@@ -467,7 +460,6 @@ async def analyze_clinical_state(state: ClinicalState):
     dynamic_tasks = []
     vitals = state.vitals
     
-    # 2. Absolute Clinical Thresholds
     if state.cascade_risk > 60.0:
         dynamic_tasks.append({"id": "d1", "task": "PRE-STAGE: Rapid Response Kit (Systemic Risk Spike)", "priority": "critical", "urgency_score": 95})
     
@@ -480,7 +472,6 @@ async def analyze_clinical_state(state: ClinicalState):
     if vitals.get("gcs", 15) < 13:
         dynamic_tasks.append({"id": "d4", "task": "Perform neuro check (GCS drop detected)", "priority": "high", "urgency_score": 88})
 
-    # 3. Rate-of-Change (Trajectory) Thresholds against MongoDB
     if snapshots:
         last_db = snapshots[0]
         hr_delta = vitals.get("heart_rate", 0) - last_db.get("vitals", {}).get("heart_rate", 0)
@@ -493,6 +484,5 @@ async def analyze_clinical_state(state: ClinicalState):
                 "urgency_score": 82
             })
 
-    # 4. Sort all tasks strictly by AI urgency score
     all_tasks = sorted(base_tasks + dynamic_tasks, key=lambda x: x["urgency_score"], reverse=True)
     return {"tasks": all_tasks}
