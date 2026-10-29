@@ -2,6 +2,7 @@ import os
 import sys
 import redis.asyncio as redis
 import json
+from contextlib import asynccontextmanager
 
 # Dynamic path injection: ensures both the backend root and project root are
 # on the Python path so imports like 'database' and 'src' resolve correctly.
@@ -47,76 +48,6 @@ from api.streaming import router as stream_router
 # Configure Logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Q-MODS Engine API",
-    description="Hybrid Quantum-Classical Spatiotemporal Graph Neural Network for Multi-Organ Dysfunction Syndrome (MODS) Early Warning and MARL Intervention Sandbox.",
-    version="1.0.0"
-)
-# Enable CORS for frontend integration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# --- Define Request and Response Schemas ---
-class PatientSliceInput(BaseModel):
-    subject_id: int = Field(..., example=1001)
-    waveforms: Dict[str, List[float]] = Field(
-        ..., 
-        example={"ECG": [0.5, 0.6, 0.55], "ABP": [120.0, 118.0, 119.0], "RESP": [18.0, 18.2, 18.1]}
-    )
-    vitals_and_labs: Dict[str, float] = Field(
-        ..., 
-        example={
-            "creatinine": 1.4, "bun": 22.0, "urine_output": 35.0,
-            "spo2": 0.96, "respiratory_rate": 18.0, "pao2_fio2": 320.0,
-            "heart_rate": 88.0, "mean_arterial_pressure": 72.0, "systolic_bp": 115.0,
-            "bilirubin_total": 0.9, "alt": 25.0, "ast": 30.0,
-            "gcs": 15.0, "pupil_reaction": 1.0, "temperature": 37.0
-        }
-    )
-
-    @model_validator(mode='after')
-    def validate_waveforms(self) -> 'PatientSliceInput':
-        waves = self.waveforms
-        provided_lengths = {k: len(v) for k, v in waves.items() if len(v) > 0}
-        
-        if not provided_lengths:
-            target_len = 100 
-        else:
-            target_len = list(provided_lengths.values())[0]
-            if any(l != target_len for l in provided_lengths.values()):
-                raise ValueError(f"Waveform length mismatch: {provided_lengths}. All provided waveforms must have the exact same length.")
-                
-        if target_len < 10:
-            raise ValueError(f"Waveforms must have at least 10 data points (got {target_len}).")
-            
-        for ch in ["ECG", "ABP", "RESP"]:
-            if ch not in waves or len(waves[ch]) == 0:
-                waves[ch] = [0.0] * target_len
-                
-        self.waveforms = waves
-        return self
-
-class MARLActionInput(BaseModel):
-    patho_action: List[float] = Field(
-        ..., 
-        min_length=3, max_length=3, 
-        json_schema_extra={"example": [0.1, 0.05, 0.0]}
-    )
-    therapy_action: List[float] = Field(
-        ..., 
-        min_length=4, max_length=4, 
-        json_schema_extra={"example": [0.2, 0.1, 0.4, 0.0]}
-    )
-
-class ClinicalState(BaseModel):
-    vitals: dict
-    cascade_risk: float
 
 # --- WebSocket Connection Manager ---
 class ConnectionManager:
@@ -172,12 +103,97 @@ async def async_mongo_flusher():
         except Exception as e:
             logger.error(f"Async Mongo batch write failed: {e}")
 
-@app.on_event("startup")
-async def startup_event():
+
+# --- Modern FastAPI Lifespan Handler (Replaces @app.on_event("startup")) ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global ctx
-    ctx = ModelContext()
+    logger.info("Initializing Q-MODS Engine ModelContext...")
+    try:
+        ctx = ModelContext()
+        logger.info("ModelContext initialized successfully.")
+    except Exception as e:
+        logger.error(f"Failed to initialize ModelContext: {e}")
+        ctx = None
+    
     asyncio.create_task(async_mongo_flusher())
     logger.info("Application context fully loaded. Async Mongo flusher active.")
+    yield
+    logger.info("Shutting down Q-MODS Engine...")
+
+app = FastAPI(
+    title="Q-MODS Engine API",
+    description="Hybrid Quantum-Classical Spatiotemporal Graph Neural Network for Multi-Organ Dysfunction Syndrome (MODS) Early Warning and MARL Intervention Sandbox.",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Enable CORS for frontend integration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Define Request and Response Schemas ---
+class PatientSliceInput(BaseModel):
+    subject_id: int = Field(..., json_schema_extra={"example": 1001})
+    waveforms: Dict[str, List[float]] = Field(
+        ..., 
+        json_schema_extra={"example": {"ECG": [0.5, 0.6, 0.55], "ABP": [120.0, 118.0, 119.0], "RESP": [18.0, 18.2, 18.1]}}
+    )
+    vitals_and_labs: Dict[str, float] = Field(
+        ..., 
+        json_schema_extra={
+            "example": {
+                "creatinine": 1.4, "bun": 22.0, "urine_output": 35.0,
+                "spo2": 0.96, "respiratory_rate": 18.0, "pao2_fio2": 320.0,
+                "heart_rate": 88.0, "mean_arterial_pressure": 72.0, "systolic_bp": 115.0,
+                "bilirubin_total": 0.9, "alt": 25.0, "ast": 30.0,
+                "gcs": 15.0, "pupil_reaction": 1.0, "temperature": 37.0
+            }
+        }
+    )
+
+    @model_validator(mode='after')
+    def validate_waveforms(self) -> 'PatientSliceInput':
+        waves = self.waveforms
+        provided_lengths = {k: len(v) for k, v in waves.items() if len(v) > 0}
+        
+        if not provided_lengths:
+            target_len = 100 
+        else:
+            target_len = list(provided_lengths.values())[0]
+            if any(l != target_len for l in provided_lengths.values()):
+                raise ValueError(f"Waveform length mismatch: {provided_lengths}. All provided waveforms must have the exact same length.")
+                
+        if target_len < 10:
+            raise ValueError(f"Waveforms must have at least 10 data points (got {target_len}).")
+            
+        for ch in ["ECG", "ABP", "RESP"]:
+            if ch not in waves or len(waves[ch]) == 0:
+                waves[ch] = [0.0] * target_len
+                
+        self.waveforms = waves
+        return self
+
+class MARLActionInput(BaseModel):
+    patho_action: List[float] = Field(
+        ..., 
+        min_length=3, max_length=3, 
+        json_schema_extra={"example": [0.1, 0.05, 0.0]}
+    )
+    therapy_action: List[float] = Field(
+        ..., 
+        min_length=4, max_length=4, 
+        json_schema_extra={"example": [0.2, 0.1, 0.4, 0.0]}
+    )
+
+class ClinicalState(BaseModel):
+    vitals: dict
+    cascade_risk: float
 
 # TASK 3.6 FIX: Fixed feature order to ensure consistent array mapping
 FEATURE_ORDER = [
@@ -200,8 +216,7 @@ def build_model_inputs(data: PatientSliceInput, context: ModelContext) -> Tuple[
     for i, name in enumerate(FEATURE_ORDER):
         raw_labs[i] = data.vitals_and_labs.get(name, 0.0)
         
-    lab_tensor = torch.tensor([raw_labs], dtype=torch.float32)
-
+    lab_tensor = torch.from_numpy(raw_labs).unsqueeze(0).to(torch.float32)
     with torch.no_grad():
         patient_state_vector = context.quantum_encoder(waveform_emb, lab_tensor)
 

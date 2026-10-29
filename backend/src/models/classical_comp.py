@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.utils as utils
+from torch.nn.utils import parametrizations
 import logging
 from typing import List
 
@@ -24,7 +24,7 @@ class ChausalDilatedConv1DBlock(nn.Module):
             stride=1, padding=self.padding, dilation=dilation
         )
         # Weight normalization stabilizes deep TCN training
-        self.conv1 = utils.weight_norm(self.conv1)
+        self.conv1 = parametrizations.weight_norm(self.conv1)
         self.chomp1 = Chomp1d(self.padding)  # Truncates the trailing padding to force causality
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
@@ -34,7 +34,7 @@ class ChausalDilatedConv1DBlock(nn.Module):
             out_channels, out_channels, kernel_size,
             stride=1, padding=self.padding, dilation=dilation
         )
-        self.conv2 = utils.weight_norm(self.conv2)
+        self.conv2 = parametrizations.weight_norm(self.conv2)
         self.chomp2 = Chomp1d(self.padding)
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)

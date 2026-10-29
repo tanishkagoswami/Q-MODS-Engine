@@ -30,7 +30,7 @@ class MIMICQueryClient:
             logger.error(f"Failed to initialize database engine: {e}")
             raise
 
-    def get_patient_labs(self, subject_id: int, stay_id: Optional[int] = None) -> pd.DataFrame:
+    def get_patient_labs(self, subject_id: int, hadm_id: Optional[int] = None) -> pd.DataFrame:
         """
         Extracts sparse lab events (e.g., Creatinine, Bilirubin) for a specific patient.
         These are the '12-hour snapshots' needed for the organ state vector.
@@ -44,10 +44,10 @@ class MIMICQueryClient:
         """
         params = {"subject_id": subject_id}
         
-        if stay_id:
-            # If we want to isolate a specific ICU stay timeline
-            query += " AND hadm_id = :stay_id"
-            params["stay_id"] = stay_id
+        if hadm_id:
+            # FIX (Task 5.3): Corrected parameter name from stay_id to match hadm_id column filtering
+            query += " AND hadm_id = :hadm_id"
+            params["hadm_id"] = hadm_id
             
         query += " ORDER BY charttime ASC;"
         
