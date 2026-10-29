@@ -1,7 +1,7 @@
 import unittest
-from fastapi.testclient import TestClient
 import sys
 import os
+from fastapi.testclient import TestClient
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from api.main import app
@@ -9,9 +9,16 @@ from api.main import app
 class TestAPIEndpoints(unittest.TestCase):
     """Integration test suite executing HTTP requests on our live FastAPI server."""
 
-    def setUp(self):
-        # Instantiate test client
-        self.client = TestClient(app)
+    @classmethod
+    def setUpClass(cls):
+        # FIX: Use context manager to trigger FastAPI startup lifecycle events 
+        # so models are loaded into memory before tests execute.
+        cls.client_context = TestClient(app)
+        cls.client = cls.client_context.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client_context.__exit__(None, None, None)
 
     def test_health_check(self):
         response = self.client.get("/health")

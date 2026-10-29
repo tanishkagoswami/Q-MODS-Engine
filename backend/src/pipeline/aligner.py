@@ -62,8 +62,8 @@ class TimeSeriesAligner:
         """
         logger.info("Aligning sparse lab records to high-frequency waveform timeline...")
         
-        # Ensure dataframes are sorted by time (required for merge_asof)
-        df_wave = df_wave.sort_index()
+        # Ensure dataframes are sorted by time and index is explicitly named 'timestamp' (Fixes KeyError)[cite: 4]
+        df_wave = df_wave.sort_index().rename_axis('timestamp')
         df_labs = df_labs.sort_values('charttime')
         
         # Reset index of waveform temporarily so we can merge on it
