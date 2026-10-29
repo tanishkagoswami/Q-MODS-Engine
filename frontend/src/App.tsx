@@ -11,6 +11,7 @@ import DigitalTwin from './components/DigitalTwin';
 import ShapExplainer from './components/ShapExplainer';
 import QuantumVisualizer from './components/QuantumVisualizer';
 import PatientHub from './components/PatientHub';
+
 export default function App() {
   const { state, actions, buffers } = useEngineSocket();
   const [currentRole, setCurrentRole] = useState<ClinicalRole>('physician');
@@ -71,6 +72,7 @@ export default function App() {
 
       <main className="flex-1 p-6 grid grid-cols-1 xl:grid-cols-12 gap-6 max-w-[1920px] mx-auto w-full">
         
+        {/* COLUMN 1: Inputs and Controls */}
         <div className="xl:col-span-4 flex flex-col gap-6">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex flex-col gap-4">
             <div className="flex items-center justify-between">
@@ -100,21 +102,16 @@ export default function App() {
 
           <VitalControls vitals={state.vitals} setVitals={actions.setVitals} />
 
-          
-          
-          {/* UPDATE THIS LINE to pass vitals and risk to the Nurse Queue */}
           {currentRole === 'nurse' && <NurseTaskQueue vitals={state.vitals} cascadeRisk={state.cascadeRisk} />}
-          
-          {/* Render Patient Hub only for the Patient role */}
           {currentRole === 'patient' && <PatientHub vitals={state.vitals} cascadeRisk={state.cascadeRisk} />}
-          
         </div>
 
+        {/* COLUMN 2: Analytics, Risk, and AI Explainability */}
         <div className="xl:col-span-4 flex flex-col gap-6">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex-1 flex flex-col items-center">
-            <h2 className="text-lg font-bold border-b border-slate-800 pb-2 w-full text-left mb-8">Systemic Cascade Warning</h2>
-
-            <div className="flex flex-col items-center justify-center h-full">
+          
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 backdrop-blur-md flex flex-col items-center">
+            <h2 className="text-lg font-bold border-b border-slate-800 pb-2 w-full text-left mb-6">Systemic Cascade Warning</h2>
+            <div className="flex flex-col items-center justify-center py-4">
               <span className={`text-7xl font-extrabold font-mono ${state.cascadeRisk > 60 ? 'text-rose-500' : state.cascadeRisk > 30 ? 'text-amber-500' : 'text-emerald-400'}`}>
                 {state.cascadeRisk.toFixed(1)}%
               </span>
@@ -122,28 +119,23 @@ export default function App() {
             </div>
           </div>
 
-          {/* Render the SHAP Neural Explainer */}
-          <ShapExplainer shapData={state.shap || []} />
-
-          {/* ADD THIS NEW COMPONENT: Quantum VQC Activations Matrix */}
-          <QuantumVisualizer activations={state.vqc_activations || []} />
-
-        </div>
-        <div className="xl:col-span-4 h-full">
-            <DigitalTwin hazards={state.organ_hazards} />
-          </div>
-          
-        
-
-
-        <div className="xl:col-span-4 flex flex-col gap-6">
-          {/* Passed the new organ_hazards from the Python payload, with a safety fallback */}
           <OrganGraph 
             hazards={state.organ_hazards || {
               cardiovascular: 0, pulmonary: 0, renal: 0, hepatic: 0, cns: 0
             }} 
           />
+
+          <ShapExplainer shapData={state.shap || []} />
+
+          <QuantumVisualizer activations={state.vqc_activations || []} />
+
         </div>
+
+        {/* COLUMN 3: Digital Twin */}
+        <div className="xl:col-span-4 flex flex-col">
+          <DigitalTwin hazards={state.organ_hazards} />
+        </div>
+
       </main>
     </div>
   );
