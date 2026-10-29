@@ -9,7 +9,7 @@ interface HistoryModalProps {
 }
 
 export default function HistoryModal({ organId, organName, onClose }: HistoryModalProps) {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<Array<{ time: string; risk: number }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,11 +17,11 @@ export default function HistoryModal({ organId, organName, onClose }: HistoryMod
     const fetchHistory = () => {
       fetch(`https://qmods-backend.onrender.com/api/history/${organId}`)
         .then(res => res.json())
-        .then(fetchedData => {
+        .then((fetchedData: { history?: Array<{ vitals?: Record<string, number> }> }) => {
           // Extract the array from the history key
           const historyArray = fetchedData.history || [];
           
-          const formattedData = historyArray.map((entry: any, index: number) => {
+          const formattedData = historyArray.map((entry, index) => {
             const vitals = entry.vitals || {};
             // Extract the specific organ hazard/vital from the backend payload
             const riskValue = vitals.risk || vitals.score || vitals[organId] || vitals.value || 0;
@@ -35,7 +35,7 @@ export default function HistoryModal({ organId, organName, onClose }: HistoryMod
           setData(formattedData);
           setLoading(false);
         })
-        .catch(err => {
+        .catch((err: unknown) => {
           console.error("Failed to fetch history:", err);
           setLoading(false);
         });

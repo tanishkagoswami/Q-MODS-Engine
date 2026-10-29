@@ -49,13 +49,13 @@ export default function NurseTaskQueue({ vitals, cascadeRisk }: NurseTaskQueuePr
           const data = await res.json();
           setTasks(data.tasks);
         }
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') {
           console.log('Aborted older analyze request');
         } else {
           console.error("Backend analysis failed. Engine offline.", err);
-        }
-      } finally {
+    }
+  } finally {
         setTimeout(() => setIsSyncing(false), 300);
       }
     }, 300); // Wait 300ms before firing

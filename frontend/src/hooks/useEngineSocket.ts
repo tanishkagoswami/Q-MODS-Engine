@@ -9,7 +9,6 @@ export interface Vitals {
   gcs: number;
 }
 
-// 1. Define the shape of the incoming hazard data
 export interface OrganHazards {
   cardiovascular: number;
   pulmonary: number;
@@ -18,14 +17,12 @@ export interface OrganHazards {
   cns: number;
 }
 
-// Define the shape of the SHAP feature importance payload
 export interface ShapFeature {
   feature: string;
   score: number;
 }
 
 export const useEngineSocket = () => {
-  // --- Global State ---
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const isPlayingRef = useRef(true);
   const [isAnomalyActive, setIsAnomalyActive] = useState<boolean>(false);
@@ -42,7 +39,6 @@ export const useEngineSocket = () => {
 
   const [cascadeRisk, setCascadeRisk] = useState<number>(12.4);
 
-  // 2. Initialize the new state for Organ Hazards
   const [organHazards, setOrganHazards] = useState<OrganHazards>({
     cardiovascular: 0,
     pulmonary: 0,
@@ -50,17 +46,15 @@ export const useEngineSocket = () => {
     hepatic: 0,
     cns: 0
   });
-  // Initialize state for Quantum VQC Activations (128-dim array)
   const [vqcActivations, setVqcActivations] = useState<number[]>([]);
-  // Initialize state for SHAP explainability data
   const [shap, setShap] = useState<ShapFeature[]>([]);
 
-  // --- Sync Ref for WebSocket ---
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  // Cleanup socket on unmount (Task 2.3)
+  const socketRef = useRef<WebSocket | null>(null);
+
   useEffect(() => {
     return () => {
       if (socketRef.current) {
@@ -69,22 +63,18 @@ export const useEngineSocket = () => {
     };
   }, []);
 
-  // --- High-Performance Canvas Buffers ---
   const ecgBuffer = useRef<number[]>([]);
   const abpBuffer = useRef<number[]>([]);
   const respBuffer = useRef<number[]>([]);
   const tickRef = useRef<number>(0);
-  const socketRef = useRef<WebSocket | null>(null);
 
-  // --- Backend Connection Logic ---
   const toggleEngineMode = () => {
-    // Prevent double-clicking while it is already trying to connect (Task 2.3)
     if (socketRef.current?.readyState === WebSocket.CONNECTING) {
       return; 
     }
 
     if (!isBackendConnected) {
-      // Use dynamic config URL instead of hardcoded string
+      // eslint-disable-next-line react-hooks/immutability
       socketRef.current = new WebSocket(`${WS_BASE}/ws/telemetry`);
       
       socketRef.current.onopen = () => {
@@ -99,7 +89,6 @@ export const useEngineSocket = () => {
         if (data.type === "telemetry_update") {
           const telemetry = data.telemetry;
           
-          // A. Update Waveform Buffers
           if (telemetry) {
             if (telemetry.ecg) ecgBuffer.current.push(...telemetry.ecg);
             if (telemetry.abp) abpBuffer.current.push(...telemetry.abp);
@@ -111,9 +100,6 @@ export const useEngineSocket = () => {
             if (respBuffer.current.length > MAX_POINTS) respBuffer.current = respBuffer.current.slice(-MAX_POINTS);
           }
 
-          // B. Update React UI State from Python Payload
-          // TASK 3.8: Do NOT overwrite vitals state so the sandbox sliders remain usable and don't fight the stream
-          // We only update the dynamic charts.
           if (data.cascade_risk !== undefined) setCascadeRisk(data.cascade_risk);
           if (data.organ_hazards) setOrganHazards(data.organ_hazards);
           if (data.shap) setShap(data.shap);
@@ -121,7 +107,6 @@ export const useEngineSocket = () => {
         }
       };
 
-      // TASK 2.3: Fall back to local 'sim' mode on connection drop so the dashboard doesn't freeze
       socketRef.current.onerror = () => {
         setIsBackendConnected(false);
         setActiveMode('sim');
@@ -137,7 +122,6 @@ export const useEngineSocket = () => {
     }
   };
 
-  // --- Local Mathematical Simulation ---
   useEffect(() => {
     let animationFrameId: number;
 
@@ -146,11 +130,10 @@ export const useEngineSocket = () => {
         tickRef.current++;
 
         if (activeMode === 'sim') {
-          // Synthetic waveform math
           const hrPeriod = Math.floor((60 * 125) / vitals.heart_rate);
           const beatTick = tickRef.current % hrPeriod;
           
-          let ecgBase = 0.0;
+          let ecgBase: number;
           if (beatTick === 0) ecgBase = 1.0;
           else if (beatTick === 1) ecgBase = -0.15;
           else if (beatTick === Math.floor(hrPeriod * 0.15)) ecgBase = 0.2;
@@ -170,18 +153,15 @@ export const useEngineSocket = () => {
           if (abpBuffer.current.length > 250) abpBuffer.current.shift();
           if (respBuffer.current.length > 250) respBuffer.current.shift();
 
-          // Dynamic hazard math linked to all 5 sliders
           const pCardio = Math.min(1.0, 0.05 + (Math.abs(vitals.heart_rate - 78) / 80) * 1.5);
           const pRenal = Math.min(1.0, 0.05 + ((vitals.creatinine / 10) / 4) * 2.5);
           const pPulmonary = Math.min(1.0, Math.max(0, (95 - vitals.spo2) / 15));
           const pHepatic = Math.min(1.0, Math.max(0, (vitals.bilirubin - 0.8) / 4.0));
           const pCns = Math.min(1.0, Math.max(0, (15 - vitals.gcs) / 12.0));
 
-          // Cumulative cascade risk computation
           const meanRisk = ((pCardio + pRenal + pPulmonary + pHepatic + pCns) / 5.0) * 100;
           setCascadeRisk(Math.min(100, Math.max(5.0, meanRisk)));
 
-          // Real-time assignment to all 5 organ systems
           setOrganHazards({
             cardiovascular: Math.min(100, Math.round(pCardio * 1000) / 10),
             pulmonary: Math.min(100, Math.round(pPulmonary * 1000) / 10),
@@ -197,7 +177,7 @@ export const useEngineSocket = () => {
     animationFrameId = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(animationFrameId);
   }, [isPlaying, isAnomalyActive, activeMode, vitals]);
-  // 4. Expose the organHazards and shap mapping in the returned state object
+
   return {
     state: { 
       isPlaying, 

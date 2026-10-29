@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { X } from 'lucide-react';
 
 // Define the shape of the incoming live hazard data
@@ -12,9 +13,19 @@ interface OrganGraphProps {
   };
 }
 
+interface HistoryItem {
+  timestamp: string;
+  vitals: Record<string, number>;
+}
+
+interface FormattedHistoryPoint {
+  time: string;
+  value: number;
+}
+
 export default function OrganGraph({ hazards }: OrganGraphProps) {
   const [selectedOrgan, setSelectedOrgan] = useState<string | null>(null);
-  const [historyData, setHistoryData] = useState<any[]>([]);
+  const [historyData, setHistoryData] = useState<FormattedHistoryPoint[]>([]);
 
   // When an organ is clicked, fetch its corresponding historical vital from MongoDB
   useEffect(() => {
@@ -32,16 +43,17 @@ export default function OrganGraph({ hazards }: OrganGraphProps) {
     const metric = metricMap[selectedOrgan.toLowerCase()];
     
     if (metric) {
-      fetch(`https://qmods-backend.onrender.com/api/history/${metric}`)        .then(res => res.json())
-        .then(data => {
+      fetch(`https://qmods-backend.onrender.com/api/history/${metric}`)       
+        .then(res => res.json())
+        .then((data: { history: HistoryItem[] }) => {
           // Format the data for Recharts
-          const formatted = data.history.map((d: any) => ({
+          const formatted = (data.history || []).map((d) => ({
             time: new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             value: d.vitals[metric]
           }));
           setHistoryData(formatted);
         })
-        .catch(err => console.error("Failed to fetch history:", err));
+        .catch((err: unknown) => console.error("Failed to fetch history:", err));
     }
   }, [selectedOrgan]);
 
